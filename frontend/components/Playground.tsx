@@ -263,16 +263,8 @@ export default function Playground() {
                 model={selectedModel}
                 temperature={temperature}
                 systemInstruction={systemInstruction}
-                outputLength={outputLength}
-                topP={topP}
-                grounding={grounding}
-                urlContext={urlContext}
                 onTemperatureChange={setTemperature}
                 onSystemInstructionChange={setSystemInstruction}
-                onOutputLengthChange={setOutputLength}
-                onTopPChange={setTopP}
-                onGroundingChange={setGrounding}
-                onUrlContextChange={setUrlContext}
                 onClose={() => setShowSettings(false)}
               />
             </div>
