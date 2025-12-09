@@ -18,9 +18,15 @@ export default function Home() {
       }
 
       try {
-        await authAPI.getMe();
+        // 添加超时处理
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('请求超时')), 5000);
+        });
+
+        await Promise.race([authAPI.getMe(), timeoutPromise]);
         setLoading(false);
       } catch (error) {
+        console.error('认证检查失败:', error);
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         router.push('/login');

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Home, Play, Build, BarChart3, BookOpen, Settings, LogOut, ChevronDown, ChevronRight } from 'lucide-react';
+import { Home, Play, Wrench, BarChart, BookOpen, Settings, LogOut, ChevronDown, ChevronRight } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface User {
@@ -92,7 +92,7 @@ export default function Sidebar({ user }: SidebarProps) {
             href="#"
             className="flex items-center gap-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <Build className="w-5 h-5" />
+            <Wrench className="w-5 h-5" />
             <span>构建</span>
             <ChevronRight className="w-4 h-4 ml-auto" />
           </a>
@@ -101,7 +101,7 @@ export default function Sidebar({ user }: SidebarProps) {
             href="#"
             className="flex items-center gap-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <BarChart3 className="w-5 h-5" />
+            <BarChart className="w-5 h-5" />
             <span>仪表板</span>
             <ChevronRight className="w-4 h-4 ml-auto" />
           </a>

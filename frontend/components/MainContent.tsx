@@ -58,6 +58,7 @@ export default function MainContent({
       setImages((prev) => [...prev, ...acceptedFiles]);
     },
     multiple: true,
+    noClick: true, // 禁用点击触发，只保留拖拽功能
   });
 
   const removeImage = (index: number) => {
@@ -238,13 +239,21 @@ export default function MainContent({
                   rows={3}
                 />
                 <div className="flex items-center justify-between mt-2">
-                  <button
-                    type="button"
-                    className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
-                  >
+                  <label className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 transition-colors cursor-pointer">
                     <ImageIcon className="w-4 h-4" />
                     <span>上传图片</span>
-                  </button>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          setImages((prev) => [...prev, ...Array.from(e.target.files || [])]);
+                        }
+                      }}
+                    />
+                  </label>
                   <span className="text-xs text-gray-400">
                     {isDragActive ? '松开以上传图片' : '支持拖拽图片'}
                   </span>
