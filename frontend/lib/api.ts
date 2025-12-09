@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+// 使用相对路径，Next.js rewrites 会将请求代理到后端
+// 如果设置了 NEXT_PUBLIC_API_URL，则使用绝对路径（用于开发环境直接连接后端）
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -118,7 +120,9 @@ export const generateAPI = {
       });
     }
 
-    const response = await fetch(`${API_URL}/api/generate/stream`, {
+    // 使用相对路径或绝对路径
+    const streamUrl = API_URL ? `${API_URL}/api/generate/stream` : '/api/generate/stream';
+    const response = await fetch(streamUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${localStorage.getItem('token')}`,

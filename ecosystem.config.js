@@ -30,7 +30,9 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
-        NEXT_PUBLIC_API_URL: 'http://localhost:3001',
+        // 后端地址，用于 Next.js rewrites 代理
+        BACKEND_URL: 'http://localhost:3001',
+        // 不设置 NEXT_PUBLIC_API_URL，使用相对路径避免跨域
       },
       error_file: path.join(__dirname, 'logs', 'frontend-error.log'),
       out_file: path.join(__dirname, 'logs', 'frontend-out.log'),

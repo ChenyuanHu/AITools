@@ -2,7 +2,9 @@
 
 ## 🚀 快速开始（使用 PM2）
 
-1. **配置环境变量**：
+**重要：** 前后端已配置为同一端口，前端通过 Next.js rewrites 代理 API 请求到后端，避免跨域问题。
+
+1. **配置后端环境变量**：
    ```bash
    cd backend
    cp env.example .env
@@ -11,7 +13,8 @@
 
 2. **安装依赖**：
    ```bash
-   npm run install:all
+   npm install  # 安装根目录依赖
+   npm run install:all  # 安装前端和后端依赖
    ```
 
 3. **构建前端**：
@@ -25,6 +28,8 @@
    ```bash
    ./start.sh
    ```
+   
+   访问地址：`http://your-server-ip:3000`（前端和后端 API 都在这个端口）
 
 5. **查看状态**：
    ```bash
@@ -257,8 +262,13 @@ server {
 
 ### 前端环境变量
 
-- `PORT`: 前端服务端口（默认 3000）
-- `NEXT_PUBLIC_API_URL`: 后端 API 地址（默认 http://localhost:3001）
+- `PORT`: 前端服务端口（可选，默认 3000）
+- `BACKEND_URL`: 后端 API 地址（用于 Next.js rewrites 代理，默认 `http://localhost:3001`）
+- `NEXT_PUBLIC_API_URL`: 前端 API 地址（可选，不设置则使用相对路径，避免跨域问题）
+
+**注意：** 
+- 生产环境建议不设置 `NEXT_PUBLIC_API_URL`，使用相对路径通过 Next.js rewrites 代理，避免跨域问题
+- 前端通过 Next.js rewrites 将 `/api/*` 请求代理到后端，用户访问时只需要一个端口（3000）
 
 ### 后端环境变量
 
@@ -269,15 +279,13 @@ server {
 - `GOOGLE_AI_API_KEY`: Google AI API 密钥（可选，但 AI 功能需要）
 - `ALLOWED_ORIGINS`: 允许的 CORS 来源（可选，多个用逗号分隔，不设置则允许所有来源）
 
-### 前端环境变量
-
-- `PORT`: 前端服务端口（可选，默认 3000）
-- `NEXT_PUBLIC_API_URL`: 后端 API 地址（必需，例如：`http://your-server-ip:3001` 或 `https://api.yourdomain.com`）
+**注意：** 由于前端通过 Next.js rewrites 代理 API 请求，后端 CORS 配置主要用于开发环境直接访问后端 API。
 
 ## 注意事项
 
 1. **生产环境**：确保修改 `JWT_SECRET` 为强密码
-2. **API 地址**：如果前后端不在同一服务器，需要修改 `NEXT_PUBLIC_API_URL`
-3. **防火墙**：确保开放相应端口（3000 和 3001）
+2. **端口配置**：用户只需要访问前端端口（3000），API 请求会自动代理到后端
+3. **防火墙**：确保开放前端端口（3000）和后端端口（3001，用于内部通信）
 4. **HTTPS**：生产环境建议使用 HTTPS，可以通过 Nginx 配置 SSL 证书
+5. **跨域问题**：已通过 Next.js rewrites 解决，无需额外配置 CORS
 
