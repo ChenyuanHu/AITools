@@ -25,10 +25,11 @@ interface MainContentProps {
   messages: Message[];
   onSelectModel: (model: Model) => void;
   onSelectTab: (tab: string) => void;
-  onGenerate: (prompt: string, images: File[]) => Promise<any>;
+  onGenerate: (prompt: string, images: File[], history: Message[]) => Promise<any>;
   onGenerateStream: (
     prompt: string,
     images: File[],
+    history: Message[],
     onChunk: (text: string) => void,
     onImage?: (image: { data: string; mimeType: string }) => void,
     onComplete?: () => void
@@ -122,6 +123,7 @@ export default function MainContent({
       await onGenerateStream(
         userPrompt,
         userImages,
+        messages, // 传递历史消息
         (chunk) => {
           fullResponse += chunk;
           setCurrentResponse(fullResponse);

@@ -185,6 +185,18 @@ app.post('/api/generate', authenticateToken, upload.array('images', 5), async (r
       return res.status(500).json({ error: 'Google AI API密钥未配置' });
     }
 
+    // 解析历史消息
+    let history = [];
+    try {
+      if (req.body.history) {
+        history = typeof req.body.history === 'string' 
+          ? JSON.parse(req.body.history) 
+          : req.body.history;
+      }
+    } catch (e) {
+      console.error('[生成] 解析历史消息失败:', e);
+    }
+
     const { prompt, modelId = 'gemini-3-pro-preview', temperature = 1, systemInstruction } = req.body;
 
     if (!prompt) {
@@ -193,7 +205,7 @@ app.post('/api/generate', authenticateToken, upload.array('images', 5), async (r
 
     // 映射模型ID到实际的模型名称
     const actualModelName = modelNameMap[modelId] || modelId;
-    console.log(`[流式生成] 使用模型: ${modelId} -> ${actualModelName}`);
+    console.log(`[生成] 使用模型: ${modelId} -> ${actualModelName}, 历史消息数: ${history.length}`);
     
     let model;
     try {
@@ -202,10 +214,10 @@ app.post('/api/generate', authenticateToken, upload.array('images', 5), async (r
         systemInstruction: systemInstruction || undefined
       });
     } catch (error) {
-      console.error(`[流式生成] 模型初始化错误:`, error);
+      console.error(`[生成] 模型初始化错误:`, error);
       // 如果模型名称失败，尝试使用原始ID
       if (actualModelName !== modelId) {
-        console.log(`[流式生成] 尝试使用原始模型ID: ${modelId}`);
+        console.log(`[生成] 尝试使用原始模型ID: ${modelId}`);
         model = genAI.getGenerativeModel({ 
           model: modelId,
           systemInstruction: systemInstruction || undefined
@@ -215,15 +227,47 @@ app.post('/api/generate', authenticateToken, upload.array('images', 5), async (r
       }
     }
 
-    // 构建请求内容
-    const parts = [{ text: prompt }];
+    // 构建历史对话内容
+    const contents = [];
+    
+    // 转换历史消息为 Google AI API 格式
+    for (const msg of history) {
+      const parts = [];
+      
+      // 添加文本内容
+      if (msg.content) {
+        parts.push({ text: msg.content });
+      }
+      
+      // 添加图片内容
+      if (msg.images && msg.images.length > 0) {
+        for (const img of msg.images) {
+          parts.push({
+            inlineData: {
+              data: img.data,
+              mimeType: img.mimeType
+            }
+          });
+        }
+      }
+      
+      if (parts.length > 0) {
+        contents.push({
+          role: msg.role === 'user' ? 'user' : 'model',
+          parts: parts
+        });
+      }
+    }
+
+    // 构建当前请求内容
+    const currentParts = [{ text: prompt }];
 
     // 如果有图片，添加图片到parts
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
         const imageData = fs.readFileSync(file.path);
         const base64Image = imageData.toString('base64');
-        parts.push({
+        currentParts.push({
           inlineData: {
             data: base64Image,
             mimeType: file.mimetype
@@ -232,12 +276,18 @@ app.post('/api/generate', authenticateToken, upload.array('images', 5), async (r
       }
     }
 
+    // 添加当前用户消息到对话历史
+    contents.push({
+      role: 'user',
+      parts: currentParts
+    });
+
     // 检查是否是图片生成模型
     const isImageModel = modelId.includes('image') || modelId === 'gemini-2.5-flash-image';
     
-    // 生成内容
+    // 生成内容（包含完整对话历史）
     const result = await model.generateContent({
-      contents: [{ role: 'user', parts }],
+      contents: contents,
       generationConfig: {
         temperature: parseFloat(temperature),
         topP: 0.95,
@@ -321,6 +371,18 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
       return res.status(500).json({ error: 'Google AI API密钥未配置' });
     }
 
+    // 解析历史消息
+    let history = [];
+    try {
+      if (req.body.history) {
+        history = typeof req.body.history === 'string' 
+          ? JSON.parse(req.body.history) 
+          : req.body.history;
+      }
+    } catch (e) {
+      console.error('[流式生成] 解析历史消息失败:', e);
+    }
+
     const { prompt, modelId = 'gemini-3-pro-preview', temperature = 1, systemInstruction } = req.body;
 
     if (!prompt) {
@@ -329,7 +391,7 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
 
     // 映射模型ID到实际的模型名称
     const actualModelName = modelNameMap[modelId] || modelId;
-    console.log(`[流式生成] 使用模型: ${modelId} -> ${actualModelName}`);
+    console.log(`[流式生成] 使用模型: ${modelId} -> ${actualModelName}, 历史消息数: ${history.length}`);
     
     let model;
     try {
@@ -351,15 +413,47 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
       }
     }
 
-    // 构建请求内容
-    const parts = [{ text: prompt }];
+    // 构建历史对话内容
+    const contents = [];
+    
+    // 转换历史消息为 Google AI API 格式
+    for (const msg of history) {
+      const parts = [];
+      
+      // 添加文本内容
+      if (msg.content) {
+        parts.push({ text: msg.content });
+      }
+      
+      // 添加图片内容
+      if (msg.images && msg.images.length > 0) {
+        for (const img of msg.images) {
+          parts.push({
+            inlineData: {
+              data: img.data,
+              mimeType: img.mimeType
+            }
+          });
+        }
+      }
+      
+      if (parts.length > 0) {
+        contents.push({
+          role: msg.role === 'user' ? 'user' : 'model',
+          parts: parts
+        });
+      }
+    }
+
+    // 构建当前请求内容
+    const currentParts = [{ text: prompt }];
 
     // 如果有图片，添加图片到parts
     if (req.files && req.files.length > 0) {
       for (const file of req.files) {
         const imageData = fs.readFileSync(file.path);
         const base64Image = imageData.toString('base64');
-        parts.push({
+        currentParts.push({
           inlineData: {
             data: base64Image,
             mimeType: file.mimetype
@@ -367,6 +461,12 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
         });
       }
     }
+
+    // 添加当前用户消息到对话历史
+    contents.push({
+      role: 'user',
+      parts: currentParts
+    });
 
     // 设置SSE响应头
     res.setHeader('Content-Type', 'text/event-stream');
@@ -376,9 +476,9 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
     // 检查是否是图片生成模型
     const isImageModel = modelId.includes('image') || modelId === 'gemini-2.5-flash-image';
     
-    // 生成流式内容
+    // 生成流式内容（包含完整对话历史）
     const result = await model.generateContentStream({
-      contents: [{ role: 'user', parts }],
+      contents: contents,
       generationConfig: {
         temperature: parseFloat(temperature),
         topP: 0.95,

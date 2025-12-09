@@ -172,6 +172,7 @@ export default function Playground() {
   const handleGenerateStream = async (
     prompt: string,
     images: File[],
+    history: Message[],
     onChunk: (text: string) => void,
     onImage?: (image: { data: string; mimeType: string }) => void,
     onComplete?: () => void
@@ -186,6 +187,7 @@ export default function Playground() {
         temperature,
         systemInstruction: systemInstruction || undefined,
         images: images.length > 0 ? images : undefined,
+        history: history, // 传递历史消息
       });
 
       const reader = response.body?.getReader();

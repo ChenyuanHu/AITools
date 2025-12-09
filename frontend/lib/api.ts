@@ -61,12 +61,21 @@ export const generateAPI = {
     temperature?: number;
     systemInstruction?: string;
     images?: File[];
+    history?: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+      images?: Array<{ data: string; mimeType: string }>;
+    }>;
   }) => {
     const formData = new FormData();
     formData.append('prompt', data.prompt);
     if (data.modelId) formData.append('modelId', data.modelId);
     if (data.temperature !== undefined) formData.append('temperature', data.temperature.toString());
     if (data.systemInstruction) formData.append('systemInstruction', data.systemInstruction);
+    
+    if (data.history && data.history.length > 0) {
+      formData.append('history', JSON.stringify(data.history));
+    }
     
     if (data.images) {
       data.images.forEach((image) => {
@@ -87,12 +96,21 @@ export const generateAPI = {
     temperature?: number;
     systemInstruction?: string;
     images?: File[];
+    history?: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+      images?: Array<{ data: string; mimeType: string }>;
+    }>;
   }) => {
     const formData = new FormData();
     formData.append('prompt', data.prompt);
     if (data.modelId) formData.append('modelId', data.modelId);
     if (data.temperature !== undefined) formData.append('temperature', data.temperature.toString());
     if (data.systemInstruction) formData.append('systemInstruction', data.systemInstruction);
+    
+    if (data.history && data.history.length > 0) {
+      formData.append('history', JSON.stringify(data.history));
+    }
     
     if (data.images) {
       data.images.forEach((image) => {
