@@ -14,16 +14,41 @@ const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
+// 检查必需的环境变量
+const requiredEnvVars = {
+  PORT: process.env.PORT,
+  JWT_SECRET: process.env.JWT_SECRET,
+  DEFAULT_USER_NAME: process.env.DEFAULT_USER_NAME,
+  DEFAULT_USER_PASSWORD: process.env.DEFAULT_USER_PASSWORD,
+};
+
+const missingVars = Object.entries(requiredEnvVars)
+  .filter(([key, value]) => !value)
+  .map(([key]) => key);
+
+if (missingVars.length > 0) {
+  console.error('❌ 错误: 缺少必需的环境变量:');
+  missingVars.forEach(key => {
+    console.error(`   - ${key}`);
+  });
+  console.error('\n请创建 .env 文件并配置这些变量。参考 env.example 文件。');
+  process.exit(1);
+}
+
 const app = express();
-const PORT = process.env.PORT || 3001;
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const PORT = parseInt(process.env.PORT, 10);
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // 内存存储用户（生产环境应使用数据库）
+// 从环境变量读取默认用户信息
+const defaultUserName = process.env.DEFAULT_USER_NAME;
+const defaultUserPassword = process.env.DEFAULT_USER_PASSWORD;
+
 const users = [
   {
     id: 1,
-    password: bcrypt.hashSync('cheneyhu', 10), // 默认密码
-    name: 'cheneyhu'
+    password: bcrypt.hashSync(defaultUserPassword, 10),
+    name: defaultUserName
   }
 ];
 
@@ -571,10 +596,17 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
   }
 });
 
+// 检查 Google AI API Key（可选，但建议配置）
+if (!process.env.GOOGLE_AI_API_KEY) {
+  console.warn('⚠️  警告: GOOGLE_AI_API_KEY 未设置，AI 功能将不可用');
+  console.warn('   请在 .env 文件中配置 GOOGLE_AI_API_KEY');
+}
+
 app.listen(PORT, () => {
-  console.log(`后端服务器运行在 http://localhost:${PORT}`);
+  console.log(`✅ 后端服务器运行在 http://localhost:${PORT}`);
+  console.log(`   默认用户: ${defaultUserName}`);
   if (!genAI) {
-    console.warn('警告: GOOGLE_AI_API_KEY 未设置，请配置环境变量');
+    console.warn('⚠️  警告: GOOGLE_AI_API_KEY 未设置，AI 功能将不可用');
   }
 });
 
