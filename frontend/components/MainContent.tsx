@@ -103,7 +103,7 @@ export default function MainContent({
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* 标题 */}
       <div className="p-6 border-b border-gray-200">
-        <h1 className="text-3xl font-bold text-gray-900">Google AI Studio</h1>
+        <h1 className="text-3xl font-bold text-gray-900">My AI Studio</h1>
       </div>
 
       {/* 模型标签 */}

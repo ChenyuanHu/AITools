@@ -22,9 +22,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-producti
 const users = [
   {
     id: 1,
-    email: 'admin@example.com',
-    password: bcrypt.hashSync('admin123', 10), // 默认密码
-    name: 'Admin User'
+    password: bcrypt.hashSync('cheneyhu', 10), // 默认密码
+    name: 'cheneyhu'
   }
 ];
 
@@ -67,6 +66,13 @@ if (process.env.GOOGLE_AI_API_KEY) {
   genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY);
 }
 
+// 模型名称映射：前端使用的ID -> Google AI API实际使用的模型名称
+const modelNameMap = {
+  'gemini-3-pro-preview': 'gemini-3-pro-preview',
+  'gemini-2.5-flash': 'gemini-2.5-flash',
+  'gemini-2.5-flash-image': 'gemini-2.5-flash-image' // 使用 latest 版本
+};
+
 // 认证中间件
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -87,70 +93,27 @@ const authenticateToken = (req, res, next) => {
 
 // 路由
 
-// 注册
-app.post('/api/auth/register', async (req, res) => {
-  try {
-    const { email, password, name } = req.body;
-    
-    if (!email || !password) {
-      return res.status(400).json({ error: '邮箱和密码是必填项' });
-    }
-
-    const existingUser = users.find(u => u.email === email);
-    if (existingUser) {
-      return res.status(400).json({ error: '该邮箱已被注册' });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = {
-      id: users.length + 1,
-      email,
-      password: hashedPassword,
-      name: name || email.split('@')[0]
-    };
-
-    users.push(newUser);
-
-    const token = jwt.sign(
-      { id: newUser.id, email: newUser.email },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.json({
-      token,
-      user: {
-        id: newUser.id,
-        email: newUser.email,
-        name: newUser.name
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: '注册失败' });
-  }
-});
-
 // 登录
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { name, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ error: '邮箱和密码是必填项' });
+    if (!name || !password) {
+      return res.status(400).json({ error: '姓名和密码是必填项' });
     }
 
-    const user = users.find(u => u.email === email);
+    const user = users.find(u => u.name === name);
     if (!user) {
-      return res.status(401).json({ error: '邮箱或密码错误' });
+      return res.status(401).json({ error: '姓名或密码错误' });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
-      return res.status(401).json({ error: '邮箱或密码错误' });
+      return res.status(401).json({ error: '姓名或密码错误' });
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email },
+      { id: user.id, name: user.name },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -159,7 +122,6 @@ app.post('/api/auth/login', async (req, res) => {
       token,
       user: {
         id: user.id,
-        email: user.email,
         name: user.name
       }
     });
@@ -176,7 +138,6 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
   }
   res.json({
     id: user.id,
-    email: user.email,
     name: user.name
   });
 });
@@ -192,15 +153,15 @@ app.get('/api/models', authenticateToken, (req, res) => {
       isNew: true
     },
     {
-      id: 'gemini-1.5-pro',
-      name: 'Gemini 1.5 Pro',
+      id: 'gemini-2.5-flash',
+      name: 'Gemini 2.5 Flash',
       description: '强大的多模态模型，支持长上下文',
       type: 'gemini',
       isNew: false
     },
     {
-      id: 'gemini-1.5-flash',
-      name: 'Gemini 1.5 Flash',
+      id: 'gemini-2.5-flash-image',
+      name: 'Gemini 2.5 Flash Image',
       description: '快速且高效的多模态模型',
       type: 'gemini',
       isNew: false
@@ -216,16 +177,35 @@ app.post('/api/generate', authenticateToken, upload.array('images', 5), async (r
       return res.status(500).json({ error: 'Google AI API密钥未配置' });
     }
 
-    const { prompt, modelId = 'gemini-1.5-pro', temperature = 1, systemInstruction } = req.body;
+    const { prompt, modelId = 'gemini-3-pro-preview', temperature = 1, systemInstruction } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: '提示词不能为空' });
     }
 
-    const model = genAI.getGenerativeModel({ 
-      model: modelId,
-      systemInstruction: systemInstruction || undefined
-    });
+    // 映射模型ID到实际的模型名称
+    const actualModelName = modelNameMap[modelId] || modelId;
+    console.log(`[流式生成] 使用模型: ${modelId} -> ${actualModelName}`);
+    
+    let model;
+    try {
+      model = genAI.getGenerativeModel({ 
+        model: actualModelName,
+        systemInstruction: systemInstruction || undefined
+      });
+    } catch (error) {
+      console.error(`[流式生成] 模型初始化错误:`, error);
+      // 如果模型名称失败，尝试使用原始ID
+      if (actualModelName !== modelId) {
+        console.log(`[流式生成] 尝试使用原始模型ID: ${modelId}`);
+        model = genAI.getGenerativeModel({ 
+          model: modelId,
+          systemInstruction: systemInstruction || undefined
+        });
+      } else {
+        throw error;
+      }
+    }
 
     // 构建请求内容
     const parts = [{ text: prompt }];
@@ -299,16 +279,35 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
       return res.status(500).json({ error: 'Google AI API密钥未配置' });
     }
 
-    const { prompt, modelId = 'gemini-1.5-pro', temperature = 1, systemInstruction } = req.body;
+    const { prompt, modelId = 'gemini-3-pro-preview', temperature = 1, systemInstruction } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: '提示词不能为空' });
     }
 
-    const model = genAI.getGenerativeModel({ 
-      model: modelId,
-      systemInstruction: systemInstruction || undefined
-    });
+    // 映射模型ID到实际的模型名称
+    const actualModelName = modelNameMap[modelId] || modelId;
+    console.log(`[流式生成] 使用模型: ${modelId} -> ${actualModelName}`);
+    
+    let model;
+    try {
+      model = genAI.getGenerativeModel({ 
+        model: actualModelName,
+        systemInstruction: systemInstruction || undefined
+      });
+    } catch (error) {
+      console.error(`[流式生成] 模型初始化错误:`, error);
+      // 如果模型名称失败，尝试使用原始ID
+      if (actualModelName !== modelId) {
+        console.log(`[流式生成] 尝试使用原始模型ID: ${modelId}`);
+        model = genAI.getGenerativeModel({ 
+          model: modelId,
+          systemInstruction: systemInstruction || undefined
+        });
+      } else {
+        throw error;
+      }
+    }
 
     // 构建请求内容
     const parts = [{ text: prompt }];

@@ -28,7 +28,7 @@ export default function Sidebar({ user }: SidebarProps) {
     <div className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen">
       {/* Logo */}
       <div className="p-4 border-b border-gray-200">
-        <h1 className="text-xl font-semibold text-gray-800">Google AI Studio</h1>
+        <h1 className="text-xl font-semibold text-gray-800">My AI Studio</h1>
       </div>
 
       {/* 导航菜单 */}

@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Google AI Studio - Playground',
-  description: 'Google AI Studio Web Console Clone',
+  title: 'My AI Studio - Playground',
+  description: 'My AI Studio',
 }
 
 export default function RootLayout({

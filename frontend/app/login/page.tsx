@@ -7,8 +7,6 @@ import { LogIn, UserPlus, Mail, Lock } from 'lucide-react';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -21,11 +19,7 @@ export default function LoginPage() {
 
     try {
       let result;
-      if (isLogin) {
-        result = await authAPI.login(email, password);
-      } else {
-        result = await authAPI.register(email, password, name);
-      }
+      result = await authAPI.login(name, password);
 
       localStorage.setItem('token', result.token);
       localStorage.setItem('user', JSON.stringify(result.user));
@@ -41,68 +35,24 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="bg-white rounded-lg shadow-xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">Google AI Studio</h1>
+          <h1 className="text-3xl font-bold text-gray-800 mb-2">My AI Studio</h1>
           <p className="text-gray-600">登录以开始使用</p>
         </div>
 
-        <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => setIsLogin(true)}
-            className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-              isLogin
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <LogIn className="inline-block w-4 h-4 mr-2" />
-            登录
-          </button>
-          <button
-            onClick={() => setIsLogin(false)}
-            className={`flex-1 py-2 px-4 rounded-lg font-medium transition-colors ${
-              !isLogin
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <UserPlus className="inline-block w-4 h-4 mr-2" />
-            注册
-          </button>
-        </div>
-
         <form onSubmit={handleSubmit} className="space-y-4">
-          {!isLogin && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                姓名
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="请输入您的姓名"
-                />
-                <UserPlus className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
-              </div>
-            </div>
-          )}
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              邮箱
+              姓名
             </label>
             <div className="relative">
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="your@email.com"
+                placeholder="请输入您的姓名"
               />
-              <Mail className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
+              <UserPlus className="absolute left-3 top-2.5 w-5 h-5 text-gray-400" />
             </div>
           </div>
 
@@ -134,15 +84,10 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? '处理中...' : isLogin ? '登录' : '注册'}
+            {loading ? '处理中...' : '登录'}
           </button>
         </form>
 
-        {isLogin && (
-          <div className="mt-4 text-sm text-gray-600 text-center">
-            <p>默认测试账号：admin@example.com / admin123</p>
-          </div>
-        )}
       </div>
     </div>
   );
