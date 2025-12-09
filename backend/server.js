@@ -117,6 +117,38 @@ const modelNameMap = {
   'gemini-2.5-flash-image': 'gemini-2.5-flash-image' // 使用 latest 版本
 };
 
+// 防暴力破解：记录失败的登录尝试
+const failedLoginAttempts = [];
+const MAX_ATTEMPTS = 5; // 最大尝试次数
+const WINDOW_MS = 10 * 60 * 1000; // 10分钟（毫秒）
+
+// 清理过期的失败尝试记录
+const cleanExpiredAttempts = () => {
+  const now = Date.now();
+  const validAttempts = failedLoginAttempts.filter(attempt => now - attempt.timestamp < WINDOW_MS);
+  failedLoginAttempts.length = 0;
+  failedLoginAttempts.push(...validAttempts);
+};
+
+// 检查是否超过速率限制
+const checkRateLimit = () => {
+  cleanExpiredAttempts();
+  return failedLoginAttempts.length >= MAX_ATTEMPTS;
+};
+
+// 记录失败的登录尝试
+const recordFailedAttempt = () => {
+  failedLoginAttempts.push({
+    timestamp: Date.now(),
+    ip: 'global' // 全局限制，不区分IP
+  });
+};
+
+// 清除失败尝试记录（登录成功时调用）
+const clearFailedAttempts = () => {
+  failedLoginAttempts.length = 0;
+};
+
 // 认证中间件
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -140,6 +172,16 @@ const authenticateToken = (req, res, next) => {
 // 登录
 app.post('/api/auth/login', async (req, res) => {
   try {
+    // 检查速率限制
+    if (checkRateLimit()) {
+      const oldestAttempt = failedLoginAttempts[0];
+      const remainingTime = Math.ceil((WINDOW_MS - (Date.now() - oldestAttempt.timestamp)) / 1000 / 60);
+      return res.status(429).json({ 
+        error: `登录尝试次数过多，请 ${remainingTime} 分钟后再试`,
+        retryAfter: Math.ceil((WINDOW_MS - (Date.now() - oldestAttempt.timestamp)) / 1000)
+      });
+    }
+
     const { name, password } = req.body;
 
     if (!name || !password) {
@@ -148,13 +190,18 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = users.find(u => u.name === name);
     if (!user) {
+      recordFailedAttempt();
       return res.status(401).json({ error: '姓名或密码错误' });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
+      recordFailedAttempt();
       return res.status(401).json({ error: '姓名或密码错误' });
     }
+
+    // 登录成功，清除失败尝试记录
+    clearFailedAttempts();
 
     const token = jwt.sign(
       { id: user.id, name: user.name },
