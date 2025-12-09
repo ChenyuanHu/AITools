@@ -69,6 +69,7 @@ if (process.env.GOOGLE_AI_API_KEY) {
 // 模型名称映射：前端使用的ID -> Google AI API实际使用的模型名称
 const modelNameMap = {
   'gemini-3-pro-preview': 'gemini-3-pro-preview',
+  'gemini-3-pro-image-preview': 'gemini-3-pro-image-preview',
   'gemini-2.5-flash': 'gemini-2.5-flash',
   'gemini-2.5-flash-image': 'gemini-2.5-flash-image' // 使用 latest 版本
 };
@@ -148,6 +149,13 @@ app.get('/api/models', authenticateToken, (req, res) => {
     {
       id: 'gemini-3-pro-preview',
       name: 'Gemini 3 Pro Preview',
+      description: '我们最智能的模型，具有SOTA推理和多模态理解能力，以及强大的代理和编码能力',
+      type: 'gemini',
+      isNew: true
+    },
+    {
+      id: 'gemini-3-pro-image-preview',
+      name: 'Gemini 3 Pro Image Preview',
       description: '我们最智能的模型，具有SOTA推理和多模态理解能力，以及强大的代理和编码能力',
       type: 'gemini',
       isNew: true
