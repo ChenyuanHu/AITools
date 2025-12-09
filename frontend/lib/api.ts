@@ -1,0 +1,122 @@
+import axios from 'axios';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+const api = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// 请求拦截器：添加token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// 响应拦截器：处理401错误
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+export const authAPI = {
+  login: async (email: string, password: string) => {
+    const response = await api.post('/api/auth/login', { email, password });
+    return response.data;
+  },
+  register: async (email: string, password: string, name?: string) => {
+    const response = await api.post('/api/auth/register', { email, password, name });
+    return response.data;
+  },
+  getMe: async () => {
+    const response = await api.get('/api/auth/me');
+    return response.data;
+  },
+};
+
+export const modelsAPI = {
+  getModels: async () => {
+    const response = await api.get('/api/models');
+    return response.data;
+  },
+};
+
+export const generateAPI = {
+  generate: async (data: {
+    prompt: string;
+    modelId?: string;
+    temperature?: number;
+    systemInstruction?: string;
+    images?: File[];
+  }) => {
+    const formData = new FormData();
+    formData.append('prompt', data.prompt);
+    if (data.modelId) formData.append('modelId', data.modelId);
+    if (data.temperature !== undefined) formData.append('temperature', data.temperature.toString());
+    if (data.systemInstruction) formData.append('systemInstruction', data.systemInstruction);
+    
+    if (data.images) {
+      data.images.forEach((image) => {
+        formData.append('images', image);
+      });
+    }
+
+    const response = await api.post('/api/generate', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+  generateStream: async (data: {
+    prompt: string;
+    modelId?: string;
+    temperature?: number;
+    systemInstruction?: string;
+    images?: File[];
+  }) => {
+    const formData = new FormData();
+    formData.append('prompt', data.prompt);
+    if (data.modelId) formData.append('modelId', data.modelId);
+    if (data.temperature !== undefined) formData.append('temperature', data.temperature.toString());
+    if (data.systemInstruction) formData.append('systemInstruction', data.systemInstruction);
+    
+    if (data.images) {
+      data.images.forEach((image) => {
+        formData.append('images', image);
+      });
+    }
+
+    const response = await fetch(`${API_URL}/api/generate/stream`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error('生成失败');
+    }
+
+    return response;
+  },
+};
+
