@@ -39,6 +39,24 @@ const app = express();
 const PORT = parseInt(process.env.PORT, 10);
 const JWT_SECRET = process.env.JWT_SECRET;
 
+// CORS 配置
+const corsOptions = {
+  origin: function (origin, callback) {
+    // 允许所有来源（生产环境建议限制特定域名）
+    // 如果需要限制，可以这样配置：
+    // const allowedOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : ['http://localhost:3000'];
+    // if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    //   callback(null, true);
+    // } else {
+    //   callback(new Error('Not allowed by CORS'));
+    // }
+    callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
 // 内存存储用户（生产环境应使用数据库）
 // 从环境变量读取默认用户信息
 const defaultUserName = process.env.DEFAULT_USER_NAME;
@@ -53,7 +71,7 @@ const users = [
 ];
 
 // 中间件
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.static('uploads'));
 

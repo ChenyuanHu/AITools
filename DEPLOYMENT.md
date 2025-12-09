@@ -262,9 +262,17 @@ server {
 
 ### 后端环境变量
 
-- `PORT`: 后端服务端口（默认 3001）
-- `GOOGLE_AI_API_KEY`: Google AI API 密钥（必需）
-- `JWT_SECRET`: JWT 密钥（用于用户认证）
+- `PORT`: 后端服务端口（必需，默认 3001）
+- `JWT_SECRET`: JWT 密钥（必需，用于用户认证）
+- `DEFAULT_USER_NAME`: 默认用户名（必需）
+- `DEFAULT_USER_PASSWORD`: 默认用户密码（必需）
+- `GOOGLE_AI_API_KEY`: Google AI API 密钥（可选，但 AI 功能需要）
+- `ALLOWED_ORIGINS`: 允许的 CORS 来源（可选，多个用逗号分隔，不设置则允许所有来源）
+
+### 前端环境变量
+
+- `PORT`: 前端服务端口（可选，默认 3000）
+- `NEXT_PUBLIC_API_URL`: 后端 API 地址（必需，例如：`http://your-server-ip:3001` 或 `https://api.yourdomain.com`）
 
 ## 注意事项
 
