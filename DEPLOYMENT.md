@@ -1,5 +1,44 @@
 # 部署指南
 
+## 🚀 快速开始（使用 PM2）
+
+1. **配置环境变量**：
+   ```bash
+   cd backend
+   cp env.example .env
+   # 编辑 .env 文件，填入所有必需配置（PORT, JWT_SECRET, DEFAULT_USER_NAME, DEFAULT_USER_PASSWORD, GOOGLE_AI_API_KEY）
+   ```
+
+2. **安装依赖**：
+   ```bash
+   npm run install:all
+   ```
+
+3. **构建前端**：
+   ```bash
+   cd frontend
+   npm run build
+   cd ..
+   ```
+
+4. **启动服务**：
+   ```bash
+   ./start.sh
+   ```
+
+5. **查看状态**：
+   ```bash
+   pm2 list
+   pm2 logs
+   ```
+
+6. **停止服务**：
+   ```bash
+   ./stop.sh
+   ```
+
+---
+
 ## 前端部署
 
 ### 方式一：使用环境变量配置端口
@@ -118,23 +157,67 @@ pm2 start server.js --name "ai-tools-backend"
 
 ### 3. 使用 PM2 管理（推荐）
 
+#### 方式一：使用启动脚本（最简单）
+
 ```bash
-# 安装 PM2
+# 确保已安装 PM2
 npm install -g pm2
 
-# 启动前端（端口 3000）
-cd frontend
-PORT=3000 pm2 start npm --name "ai-tools-frontend" -- start
+# 使用启动脚本（会自动检查配置并启动所有服务）
+./start.sh
 
-# 启动后端（端口 3001）
-cd backend
-PORT=3001 pm2 start server.js --name "ai-tools-backend"
+# 停止所有服务
+./stop.sh
+```
+
+#### 方式二：使用 PM2 配置文件
+
+```bash
+# 使用 ecosystem.config.js 配置文件启动
+pm2 start ecosystem.config.js
 
 # 查看状态
 pm2 list
 
 # 查看日志
 pm2 logs
+
+# 重启所有服务
+pm2 restart all
+
+# 停止所有服务
+pm2 stop all
+
+# 删除所有服务
+pm2 delete all
+```
+
+#### 方式三：手动启动（灵活配置）
+
+```bash
+# 安装 PM2
+npm install -g pm2
+
+# 启动后端（端口 3001）
+cd backend
+pm2 start server.js --name "ai-tools-backend"
+cd ..
+
+# 启动前端（端口 3000）
+cd frontend
+npm run build  # 首次需要构建
+PORT=3000 pm2 start npm --name "ai-tools-frontend" -- start
+cd ..
+
+# 查看状态
+pm2 list
+
+# 查看日志
+pm2 logs
+
+# 查看特定服务的日志
+pm2 logs ai-tools-backend
+pm2 logs ai-tools-frontend
 
 # 重启服务
 pm2 restart ai-tools-frontend
@@ -144,9 +227,9 @@ pm2 restart ai-tools-backend
 pm2 stop ai-tools-frontend
 pm2 stop ai-tools-backend
 
-# 保存 PM2 配置
+# 保存 PM2 配置（开机自启）
 pm2 save
-pm2 startup
+pm2 startup  # 按照提示执行命令
 ```
 
 ### 4. 使用 Nginx 反向代理（可选）
