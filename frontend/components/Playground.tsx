@@ -5,7 +5,7 @@ import Sidebar, { loadConversations, saveConversations, createConversation, type
 import MainContent from './MainContent';
 import SettingsPanel from './SettingsPanel';
 import { modelsAPI, generateAPI } from '@/lib/api';
-import { Settings, X } from 'lucide-react';
+import { Settings, X, Menu } from 'lucide-react';
 
 interface Model {
   id: string;
@@ -30,7 +30,8 @@ export default function Playground() {
   const [models, setModels] = useState<Model[]>([]);
   const [selectedModel, setSelectedModel] = useState<Model | null>(null);
   const [selectedTab, setSelectedTab] = useState('gemini');
-  const [showSettings, setShowSettings] = useState(true);
+  const [showSettings, setShowSettings] = useState(false); // 默认隐藏设置面板
+  const [showSidebar, setShowSidebar] = useState(false); // 移动端侧边栏显示状态
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -316,28 +317,67 @@ export default function Playground() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar
-        user={user}
-        currentConversationId={currentConversationId}
-        conversations={conversations}
-        onSelectConversation={handleSelectConversation}
-        onNewConversation={handleNewConversation}
-        onDeleteConversation={handleDeleteConversation}
-      />
+    <div className="flex h-screen bg-gray-50 relative">
+      {/* 移动端遮罩层 */}
+      {showSidebar && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden"
+          onClick={() => setShowSidebar(false)}
+        />
+      )}
+
+      {/* 侧边栏 */}
+      <div
+        className={`fixed md:static inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out ${
+          showSidebar ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
+        <Sidebar
+          user={user}
+          currentConversationId={currentConversationId}
+          conversations={conversations}
+          onSelectConversation={(id) => {
+            handleSelectConversation(id);
+            setShowSidebar(false); // 移动端选择会话后关闭侧边栏
+          }}
+          onNewConversation={() => {
+            handleNewConversation();
+            setShowSidebar(false); // 移动端新建会话后关闭侧边栏
+          }}
+          onDeleteConversation={handleDeleteConversation}
+          onClose={() => setShowSidebar(false)}
+        />
+      </div>
       
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* 顶部横幅 */}
-        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-yellow-800">
-            <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
-            <span>您正在使用付费API密钥。此会话中的所有请求都将被计费。</span>
+        <div className="bg-yellow-50 border-b border-yellow-200 px-3 md:px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs md:text-sm text-yellow-800 flex-1 min-w-0">
+            <span className="w-2 h-2 bg-yellow-500 rounded-full flex-shrink-0"></span>
+            <span className="truncate">您正在使用付费API密钥。此会话中的所有请求都将被计费。</span>
           </div>
           <button
             onClick={() => {}}
-            className="text-yellow-600 hover:text-yellow-800"
+            className="text-yellow-600 hover:text-yellow-800 flex-shrink-0 ml-2"
           >
             <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* 移动端顶部栏 */}
+        <div className="md:hidden flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-white">
+          <button
+            onClick={() => setShowSidebar(true)}
+            className="p-2 text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <h1 className="text-lg font-semibold text-gray-900">My AI Studio</h1>
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-2 text-gray-600 hover:text-gray-900 transition-colors"
+          >
+            <Settings className="w-5 h-5" />
           </button>
         </div>
 
@@ -356,9 +396,9 @@ export default function Playground() {
             onMessageSent={handleMessageSent}
           />
 
-          {/* 设置面板 */}
+          {/* 设置面板 - 桌面端 */}
           {showSettings && (
-            <div className="w-80 border-l border-gray-200 bg-white overflow-y-auto">
+            <div className="hidden md:block w-80 border-l border-gray-200 bg-white overflow-y-auto">
               <SettingsPanel
                 model={selectedModel}
                 temperature={temperature}
@@ -370,11 +410,25 @@ export default function Playground() {
             </div>
           )}
 
-          {/* 设置按钮 */}
+          {/* 设置面板 - 移动端全屏 */}
+          {showSettings && (
+            <div className="md:hidden fixed inset-0 z-50 bg-white">
+              <SettingsPanel
+                model={selectedModel}
+                temperature={temperature}
+                systemInstruction={systemInstruction}
+                onTemperatureChange={setTemperature}
+                onSystemInstructionChange={setSystemInstruction}
+                onClose={() => setShowSettings(false)}
+              />
+            </div>
+          )}
+
+          {/* 设置按钮 - 桌面端 */}
           {!showSettings && (
             <button
               onClick={() => setShowSettings(true)}
-              className="fixed right-4 top-20 bg-white border border-gray-300 rounded-lg p-2 shadow-lg hover:bg-gray-50 transition-colors"
+              className="hidden md:flex fixed right-4 top-20 bg-white border border-gray-300 rounded-lg p-2 shadow-lg hover:bg-gray-50 transition-colors"
             >
               <Settings className="w-5 h-5 text-gray-600" />
             </button>

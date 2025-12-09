@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, MessageSquare, Trash2, LogOut } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, LogOut, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface User {
@@ -30,6 +30,7 @@ interface SidebarProps {
   onSelectConversation: (id: string) => void;
   onNewConversation: () => void;
   onDeleteConversation: (id: string) => void;
+  onClose?: () => void; // 移动端关闭回调
 }
 
 const STORAGE_KEY = 'ai_conversations';
@@ -62,6 +63,7 @@ export default function Sidebar({
   onSelectConversation,
   onNewConversation,
   onDeleteConversation,
+  onClose,
 }: SidebarProps) {
   const router = useRouter();
 
@@ -80,16 +82,24 @@ export default function Sidebar({
 
   return (
     <div className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen">
-      {/* Logo */}
-      <div className="p-4 border-b border-gray-200">
+      {/* Logo 和关闭按钮 */}
+      <div className="p-4 border-b border-gray-200 flex items-center justify-between">
         <h1 className="text-xl font-semibold text-gray-800">My AI Studio</h1>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="md:hidden p-1 text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       {/* 新建会话按钮 */}
-      <div className="p-4 border-b border-gray-200">
+      <div className="p-3 md:p-4 border-b border-gray-200">
         <button
           onClick={onNewConversation}
-          className="w-full flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 md:py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors text-sm md:text-base"
         >
           <Plus className="w-4 h-4" />
           <span>新建会话</span>
@@ -132,7 +142,7 @@ export default function Sidebar({
                   </div>
                   <button
                     onClick={(e) => handleDelete(conversation.id, e)}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-600 transition-all"
+                    className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-gray-400 hover:text-red-600 transition-all"
                     title="删除会话"
                   >
                     <Trash2 className="w-4 h-4" />

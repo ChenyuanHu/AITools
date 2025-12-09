@@ -29,23 +29,23 @@ export default function SettingsPanel({
     <div className="h-full flex flex-col">
       {/* 头部 */}
       <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">运行设置</h2>
+        <h2 className="text-base md:text-lg font-semibold text-gray-900">运行设置</h2>
         <button
           onClick={onClose}
-          className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+          className="p-2 md:p-1 text-gray-400 hover:text-gray-600 transition-colors"
         >
-          <X className="w-4 h-4" />
+          <X className="w-5 h-5 md:w-4 md:h-4" />
         </button>
       </div>
 
       {/* 内容 */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      <div className="flex-1 overflow-y-auto p-4 md:p-4 space-y-4 md:space-y-6">
         {/* 模型信息 */}
         {model && (
           <div>
-            <h3 className="text-sm font-semibold text-gray-900 mb-2">{model.name}</h3>
-            <p className="text-xs text-gray-500 mb-1">{model.id}</p>
-            <p className="text-sm text-gray-600">{model.description}</p>
+            <h3 className="text-sm md:text-sm font-semibold text-gray-900 mb-2">{model.name}</h3>
+            <p className="text-xs text-gray-500 mb-1 break-all">{model.id}</p>
+            <p className="text-xs md:text-sm text-gray-600">{model.description}</p>
           </div>
         )}
 
@@ -75,7 +75,7 @@ export default function SettingsPanel({
             step="0.1"
             value={temperature}
             onChange={(e) => onTemperatureChange(parseFloat(e.target.value))}
-            className="w-full"
+            className="w-full h-2"
           />
           <div className="flex justify-between text-xs text-gray-500 mt-1">
             <span>0</span>
