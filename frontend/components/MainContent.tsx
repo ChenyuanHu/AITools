@@ -23,7 +23,8 @@ interface MainContentProps {
     prompt: string,
     images: File[],
     onChunk: (text: string) => void,
-    onComplete: () => void
+    onImage?: (image: { data: string; mimeType: string }) => void,
+    onComplete?: () => void
   ) => Promise<void>;
   loading: boolean;
 }
@@ -41,6 +42,7 @@ export default function MainContent({
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState<File[]>([]);
   const [response, setResponse] = useState('');
+  const [generatedImages, setGeneratedImages] = useState<Array<{ data: string; mimeType: string }>>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const responseEndRef = useRef<HTMLDivElement>(null);
 
@@ -70,6 +72,7 @@ export default function MainContent({
     if (!prompt.trim() || loading || isStreaming) return;
 
     setResponse('');
+    setGeneratedImages([]);
     setIsStreaming(true);
 
     try {
@@ -80,6 +83,28 @@ export default function MainContent({
         (chunk) => {
           fullResponse += chunk;
           setResponse(fullResponse);
+          // 自动滚动到底部
+          setTimeout(() => {
+            responseEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }, 0);
+        },
+        (image) => {
+          console.log('[前端] MainContent 收到图片:', {
+            mimeType: image.mimeType,
+            dataLength: image.data?.length || 0,
+            dataPreview: image.data?.substring(0, 50) + '...'
+          });
+          // 验证图片数据格式
+          if (!image.data || !image.mimeType) {
+            console.error('[前端] 图片数据格式不正确:', image);
+            return;
+          }
+          // 添加生成的图片
+          setGeneratedImages((prev) => {
+            const newImages = [...prev, image];
+            console.log('[前端] 更新图片列表，当前数量:', newImages.length);
+            return newImages;
+          });
           // 自动滚动到底部
           setTimeout(() => {
             responseEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -175,13 +200,28 @@ export default function MainContent({
         </div>
 
         {/* 响应区域 */}
-        {response && (
+        {(response || generatedImages.length > 0) && (
           <div className="mt-8 max-w-4xl">
             <div className="bg-white border border-gray-200 rounded-lg p-4">
               <div className="prose max-w-none">
-                <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans">
-                  {response}
-                </pre>
+                {response && (
+                  <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans">
+                    {response}
+                  </pre>
+                )}
+                {generatedImages.length > 0 && (
+                  <div className="mt-4 space-y-4">
+                    {generatedImages.map((img, index) => (
+                      <div key={index} className="border border-gray-200 rounded-lg overflow-hidden">
+                        <img
+                          src={`data:${img.mimeType};base64,${img.data}`}
+                          alt={`生成的图片 ${index + 1}`}
+                          className="w-full h-auto"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div ref={responseEndRef} />
               </div>
             </div>

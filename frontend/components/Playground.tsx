@@ -84,7 +84,8 @@ export default function Playground() {
     prompt: string,
     images: File[],
     onChunk: (text: string) => void,
-    onComplete: () => void
+    onImage?: (image: { data: string; mimeType: string }) => void,
+    onComplete?: () => void
   ) => {
     if (!selectedModel) return;
 
@@ -105,29 +106,116 @@ export default function Playground() {
         throw new Error('无法读取流');
       }
 
+      let buffer = ''; // 用于累积可能被分割的数据
+      let currentDataLine = ''; // 当前正在累积的 data 行
+      
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
-
-        for (const line of lines) {
+        buffer += chunk;
+        
+        // 处理完整的行
+        while (buffer.includes('\n')) {
+          const newlineIndex = buffer.indexOf('\n');
+          const line = buffer.substring(0, newlineIndex);
+          buffer = buffer.substring(newlineIndex + 1);
+          
           if (line.startsWith('data: ')) {
+            // 如果之前有未完成的 data 行，先处理它
+            if (currentDataLine) {
+              currentDataLine += line.slice(6); // 拼接 JSON 数据
+            } else {
+              currentDataLine = line.slice(6);
+            }
+            
+            // 尝试解析 JSON
             try {
-              const data = JSON.parse(line.slice(6));
+              const data = JSON.parse(currentDataLine);
+              currentDataLine = ''; // 清空，表示已成功解析
+              
               if (data.done) {
-                onComplete();
+                if (onComplete) onComplete();
                 setLoading(false);
                 return;
               }
               if (data.text) {
                 onChunk(data.text);
               }
+              if (data.image) {
+                console.log('[前端] 收到图片数据，MIME类型:', data.image.mimeType, '数据长度:', data.image.data?.length || 0);
+                if (onImage) {
+                  onImage(data.image);
+                  console.log('[前端] 图片数据已传递给回调');
+                } else {
+                  console.warn('[前端] onImage 回调未定义');
+                }
+              }
             } catch (e) {
-              // 忽略解析错误
+              // JSON 解析失败，可能是数据被分割了，继续累积
+              // 检查是否是未完成的字符串（图片数据）
+              if (e instanceof SyntaxError && (e.message.includes('Unterminated') || e.message.includes('Unexpected'))) {
+                // 继续累积，不重置 currentDataLine
+                continue;
+              } else {
+                console.error('[前端] JSON 解析错误:', e, '数据长度:', currentDataLine.length);
+                currentDataLine = ''; // 重置，避免无限累积错误数据
+              }
+            }
+          } else if (currentDataLine) {
+            // 如果当前有未完成的 data 行，且这行不是 data: 开头，说明是上一行的延续
+            currentDataLine += '\n' + line;
+            // 尝试解析
+            try {
+              const data = JSON.parse(currentDataLine);
+              currentDataLine = '';
+              
+              if (data.done) {
+                if (onComplete) onComplete();
+                setLoading(false);
+                return;
+              }
+              if (data.text) {
+                onChunk(data.text);
+              }
+              if (data.image) {
+                console.log('[前端] 收到图片数据（拼接后），MIME类型:', data.image.mimeType, '数据长度:', data.image.data?.length || 0);
+                if (onImage) {
+                  onImage(data.image);
+                }
+              }
+            } catch (e) {
+              // 继续累积
+              if (!(e instanceof SyntaxError)) {
+                console.error('[前端] JSON 解析错误:', e);
+                currentDataLine = '';
+              }
             }
           }
+        }
+      }
+      
+      // 处理最后剩余的数据
+      if (currentDataLine) {
+        try {
+          const data = JSON.parse(currentDataLine);
+          if (data.done) {
+            if (onComplete) onComplete();
+            setLoading(false);
+            return;
+          }
+          if (data.text) {
+            onChunk(data.text);
+          }
+          if (data.image) {
+            console.log('[前端] 收到图片数据（最后一块），MIME类型:', data.image.mimeType, '数据长度:', data.image.data?.length || 0);
+            if (onImage) {
+              onImage(data.image);
+            }
+          }
+        } catch (e) {
+          console.error('[前端] 处理最后数据块时出错:', e);
         }
       }
     } catch (error: any) {

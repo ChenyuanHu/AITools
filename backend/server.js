@@ -224,6 +224,9 @@ app.post('/api/generate', authenticateToken, upload.array('images', 5), async (r
       }
     }
 
+    // 检查是否是图片生成模型
+    const isImageModel = modelId.includes('image') || modelId === 'gemini-2.5-flash-image';
+    
     // 生成内容
     const result = await model.generateContent({
       contents: [{ role: 'user', parts }],
@@ -231,11 +234,41 @@ app.post('/api/generate', authenticateToken, upload.array('images', 5), async (r
         temperature: parseFloat(temperature),
         topP: 0.95,
         maxOutputTokens: 65536,
+        ...(isImageModel && { responseModalities: ['TEXT', 'IMAGE'] }) // 图片生成模型同时支持文本和图片
       }
     });
 
     const response = await result.response;
-    const text = response.text();
+    
+    // 调试：打印完整响应结构（仅图片模型）
+    if (isImageModel) {
+      console.log('[生成] 完整响应结构:', JSON.stringify(response, null, 2));
+    }
+    
+    // 检查是否有图片数据
+    let images = [];
+    if (response.candidates && response.candidates.length > 0) {
+      const content = response.candidates[0].content;
+      if (content && content.parts) {
+        for (const part of content.parts) {
+          if (part.inlineData) {
+            console.log('[生成] 找到图片数据');
+            images.push({
+              data: part.inlineData.data,
+              mimeType: part.inlineData.mimeType
+            });
+          }
+        }
+      }
+    }
+    
+    let text = '';
+    try {
+      text = response.text();
+    } catch (e) {
+      // 如果只有图片没有文本，text() 可能抛出错误
+      console.log('[生成] 无法获取文本，可能只有图片');
+    }
 
     // 清理上传的文件
     if (req.files) {
@@ -246,6 +279,7 @@ app.post('/api/generate', authenticateToken, upload.array('images', 5), async (r
 
     res.json({
       text,
+      images: images.length > 0 ? images : undefined,
       model: modelId,
       usage: {
         promptTokens: response.usageMetadata?.promptTokenCount || 0,
@@ -331,6 +365,9 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    // 检查是否是图片生成模型
+    const isImageModel = modelId.includes('image') || modelId === 'gemini-2.5-flash-image';
+    
     // 生成流式内容
     const result = await model.generateContentStream({
       contents: [{ role: 'user', parts }],
@@ -338,12 +375,62 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
         temperature: parseFloat(temperature),
         topP: 0.95,
         maxOutputTokens: 65536,
+        ...(isImageModel && { responseModalities: ['TEXT', 'IMAGE'] }) // 图片生成模型同时支持文本和图片
       }
     });
 
+    // 收集所有图片数据，在流结束时一次性发送
+    const collectedImages = [];
+    
     for await (const chunk of result.stream) {
-      const chunkText = chunk.text();
-      res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+      // 检查是否有文本内容
+      try {
+        const chunkText = chunk.text();
+        if (chunkText) {
+          res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+        }
+      } catch (e) {
+        // text() 可能抛出错误，忽略
+      }
+      
+      // 收集图片数据（不立即发送，避免大数据导致的问题）
+      try {
+        const candidates = chunk.candidates;
+        if (candidates && candidates.length > 0) {
+          const content = candidates[0].content;
+          if (content && content.parts) {
+            for (const part of content.parts) {
+              if (part.inlineData) {
+                console.log('[流式生成] 收集到图片数据，MIME类型:', part.inlineData.mimeType, '数据长度:', part.inlineData.data?.length || 0);
+                collectedImages.push({
+                  data: part.inlineData.data,
+                  mimeType: part.inlineData.mimeType
+                });
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[流式生成] 收集图片数据时出错:', e);
+      }
+    }
+    
+    // 流结束后，一次性发送所有图片
+    if (collectedImages.length > 0) {
+      console.log('[流式生成] 流结束，准备发送', collectedImages.length, '张图片');
+      for (const img of collectedImages) {
+        try {
+          res.write(`data: ${JSON.stringify({ 
+            image: {
+              data: img.data,
+              mimeType: img.mimeType
+            }
+          })}\n\n`);
+          console.log('[流式生成] 图片数据已发送，大小:', JSON.stringify({image: img}).length);
+        } catch (e) {
+          console.error('[流式生成] 发送图片数据失败:', e);
+        }
+      }
     }
 
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
