@@ -1,27 +1,81 @@
 'use client';
 
-import { useState } from 'react';
-import { Home, Play, Wrench, BarChart, BookOpen, Settings, LogOut, ChevronDown, ChevronRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, MessageSquare, Trash2, LogOut } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 interface User {
   id: number;
-  email: string;
   name: string;
+}
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+  images?: Array<{ data: string; mimeType: string }>;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: Message[];
 }
 
 interface SidebarProps {
   user: User | null;
+  currentConversationId: string | null;
+  conversations: Conversation[];
+  onSelectConversation: (id: string) => void;
+  onNewConversation: () => void;
+  onDeleteConversation: (id: string) => void;
 }
 
-export default function Sidebar({ user }: SidebarProps) {
+const STORAGE_KEY = 'ai_conversations';
+
+export function loadConversations(): Conversation[] {
+  if (typeof window === 'undefined') return [];
+  const stored = localStorage.getItem(STORAGE_KEY);
+  return stored ? JSON.parse(stored) : [];
+}
+
+export function saveConversations(conversations: Conversation[]) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+}
+
+export function createConversation(title: string = '新会话'): Conversation {
+  return {
+    id: Date.now().toString(),
+    title,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    messages: [],
+  };
+}
+
+export default function Sidebar({
+  user,
+  currentConversationId,
+  conversations,
+  onSelectConversation,
+  onNewConversation,
+  onDeleteConversation,
+}: SidebarProps) {
   const router = useRouter();
-  const [playgroundExpanded, setPlaygroundExpanded] = useState(true);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     router.push('/login');
+  };
+
+  const handleDelete = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('确定要删除这个会话吗？')) {
+      onDeleteConversation(id);
+    }
   };
 
   return (
@@ -31,138 +85,86 @@ export default function Sidebar({ user }: SidebarProps) {
         <h1 className="text-xl font-semibold text-gray-800">My AI Studio</h1>
       </div>
 
-      {/* 导航菜单 */}
-      <nav className="flex-1 overflow-y-auto p-4">
-        <div className="space-y-1">
-          <a
-            href="#"
-            className="flex items-center gap-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <Home className="w-5 h-5" />
-            <span>首页</span>
-          </a>
-
-          <div>
-            <button
-              onClick={() => setPlaygroundExpanded(!playgroundExpanded)}
-              className="w-full flex items-center justify-between px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Play className="w-5 h-5" />
-                <span className="font-medium">Playground</span>
-              </div>
-              {playgroundExpanded ? (
-                <ChevronDown className="w-4 h-4" />
-              ) : (
-                <ChevronRight className="w-4 h-4" />
-              )}
-            </button>
-
-            {playgroundExpanded && (
-              <div className="ml-8 mt-1 space-y-1">
-                <a
-                  href="#"
-                  className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  员工绩效评估...
-                </a>
-                <a
-                  href="#"
-                  className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  绘制正弦函数图
-                </a>
-                <a
-                  href="#"
-                  className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  小米股价反弹区间与节点
-                </a>
-                <a
-                  href="#"
-                  className="block px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                >
-                  查看全部历史
-                </a>
-              </div>
-            )}
-          </div>
-
-          <a
-            href="#"
-            className="flex items-center gap-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <Wrench className="w-5 h-5" />
-            <span>构建</span>
-            <ChevronRight className="w-4 h-4 ml-auto" />
-          </a>
-
-          <a
-            href="#"
-            className="flex items-center gap-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <BarChart className="w-5 h-5" />
-            <span>仪表板</span>
-            <ChevronRight className="w-4 h-4 ml-auto" />
-          </a>
-
-          <a
-            href="#"
-            className="flex items-center gap-3 px-3 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <BookOpen className="w-5 h-5" />
-            <span>文档</span>
-            <ChevronRight className="w-4 h-4 ml-auto" />
-          </a>
-        </div>
-      </nav>
-
-      {/* 底部信息 */}
-      <div className="p-4 border-t border-gray-200 space-y-4">
-        <p className="text-xs text-gray-500">
-          Google AI模型可能会出错，请仔细检查输出。
-        </p>
-
-        <div className="space-y-2">
-          <a
-            href="#"
-            className="block text-sm text-blue-600 hover:text-blue-700"
-          >
-            获取API密钥
-          </a>
-          <button
-            onClick={() => {}}
-            className="block text-sm text-gray-600 hover:text-gray-700"
-          >
-            <Settings className="inline-block w-4 h-4 mr-1" />
-            设置
-          </button>
-        </div>
-
-        {user && (
-          <div className="pt-2 border-t border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-gray-800">{user.name}</p>
-                  <p className="text-xs text-gray-500">{user.email}</p>
-                </div>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                title="退出登录"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
+      {/* 新建会话按钮 */}
+      <div className="p-4 border-b border-gray-200">
+        <button
+          onClick={onNewConversation}
+          className="w-full flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          <span>新建会话</span>
+        </button>
       </div>
+
+      {/* 会话列表 */}
+      <div className="flex-1 overflow-y-auto p-2">
+        <div className="space-y-1">
+          {conversations.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 text-sm">
+              <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <p>还没有会话</p>
+              <p className="text-xs mt-1">点击"新建会话"开始</p>
+            </div>
+          ) : (
+            conversations
+              .sort((a, b) => b.updatedAt - a.updatedAt)
+              .map((conversation) => (
+                <div
+                  key={conversation.id}
+                  onClick={() => onSelectConversation(conversation.id)}
+                  className={`group flex items-center gap-2 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+                    currentConversationId === conversation.id
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'hover:bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{conversation.title}</p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(conversation.updatedAt).toLocaleDateString('zh-CN', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </p>
+                  </div>
+                  <button
+                    onClick={(e) => handleDelete(conversation.id, e)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-600 transition-all"
+                    title="删除会话"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))
+          )}
+        </div>
+      </div>
+
+      {/* 底部用户信息 */}
+      {user && (
+        <div className="p-4 border-t border-gray-200">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-800">{user.name}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+              title="退出登录"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

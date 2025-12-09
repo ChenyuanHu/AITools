@@ -12,10 +12,17 @@ interface Model {
   isNew?: boolean;
 }
 
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+  images?: Array<{ data: string; mimeType: string }>;
+}
+
 interface MainContentProps {
   models: Model[];
   selectedModel: Model | null;
   selectedTab: string;
+  messages: Message[];
   onSelectModel: (model: Model) => void;
   onSelectTab: (tab: string) => void;
   onGenerate: (prompt: string, images: File[]) => Promise<any>;
@@ -27,22 +34,25 @@ interface MainContentProps {
     onComplete?: () => void
   ) => Promise<void>;
   loading: boolean;
+  onMessageSent: (message: Message) => void;
 }
 
 export default function MainContent({
   models,
   selectedModel,
   selectedTab,
+  messages,
   onSelectModel,
   onSelectTab,
   onGenerate,
   onGenerateStream,
   loading,
+  onMessageSent,
 }: MainContentProps) {
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState<File[]>([]);
-  const [response, setResponse] = useState('');
-  const [generatedImages, setGeneratedImages] = useState<Array<{ data: string; mimeType: string }>>([]);
+  const [currentResponse, setCurrentResponse] = useState('');
+  const [currentImages, setCurrentImages] = useState<Array<{ data: string; mimeType: string }>>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const responseEndRef = useRef<HTMLDivElement>(null);
 
@@ -71,18 +81,50 @@ export default function MainContent({
     if (e) e.preventDefault();
     if (!prompt.trim() || loading || isStreaming) return;
 
-    setResponse('');
-    setGeneratedImages([]);
+    const userPrompt = prompt.trim();
+    const userImages = [...images];
+    
+    // 将图片转换为 base64 以便存储
+    const imagePromises = userImages.map((file) => {
+      return new Promise<{ data: string; mimeType: string }>((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64 = reader.result as string;
+          resolve({
+            data: base64.split(',')[1] || base64,
+            mimeType: file.type,
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+    
+    const imageData = await Promise.all(imagePromises);
+    
+    // 保存用户消息
+    onMessageSent({
+      role: 'user',
+      content: userPrompt,
+      images: imageData.length > 0 ? imageData : undefined,
+    });
+
+    // 清空输入
+    setPrompt('');
+    setImages([]);
+    setCurrentResponse('');
+    setCurrentImages([]);
     setIsStreaming(true);
 
     try {
       let fullResponse = '';
+      const responseImages: Array<{ data: string; mimeType: string }> = [];
+      
       await onGenerateStream(
-        prompt,
-        images,
+        userPrompt,
+        userImages,
         (chunk) => {
           fullResponse += chunk;
-          setResponse(fullResponse);
+          setCurrentResponse(fullResponse);
           // 自动滚动到底部
           setTimeout(() => {
             responseEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -92,31 +134,42 @@ export default function MainContent({
           console.log('[前端] MainContent 收到图片:', {
             mimeType: image.mimeType,
             dataLength: image.data?.length || 0,
-            dataPreview: image.data?.substring(0, 50) + '...'
           });
-          // 验证图片数据格式
           if (!image.data || !image.mimeType) {
             console.error('[前端] 图片数据格式不正确:', image);
             return;
           }
-          // 添加生成的图片
-          setGeneratedImages((prev) => {
-            const newImages = [...prev, image];
-            console.log('[前端] 更新图片列表，当前数量:', newImages.length);
-            return newImages;
-          });
-          // 自动滚动到底部
+          responseImages.push(image);
+          setCurrentImages([...responseImages]);
           setTimeout(() => {
             responseEndRef.current?.scrollIntoView({ behavior: 'smooth' });
           }, 0);
         },
         () => {
           setIsStreaming(false);
+          // 保存助手回复
+          if (fullResponse || responseImages.length > 0) {
+            onMessageSent({
+              role: 'assistant',
+              content: fullResponse,
+              images: responseImages.length > 0 ? responseImages : undefined,
+            });
+          }
+          // 延迟清空，确保消息已保存
+          setTimeout(() => {
+            setCurrentResponse('');
+            setCurrentImages([]);
+          }, 100);
         }
       );
     } catch (error: any) {
-      setResponse(`错误: ${error.message}`);
       setIsStreaming(false);
+      onMessageSent({
+        role: 'assistant',
+        content: `错误: ${error.message}`,
+      });
+      setCurrentResponse('');
+      setCurrentImages([]);
     }
   };
 
@@ -199,34 +252,87 @@ export default function MainContent({
           ))}
         </div>
 
-        {/* 响应区域 */}
-        {(response || generatedImages.length > 0) && (
-          <div className="mt-8 max-w-4xl">
-            <div className="bg-white border border-gray-200 rounded-lg p-4">
-              <div className="prose max-w-none">
-                {response && (
-                  <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans">
-                    {response}
+        {/* 对话历史 */}
+        <div className="mt-8 max-w-4xl space-y-6">
+          {messages.map((message, index) => (
+            <div
+              key={index}
+              className={`flex gap-4 ${
+                message.role === 'user' ? 'justify-end' : 'justify-start'
+              }`}
+            >
+              {message.role === 'assistant' && (
+                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                  AI
+                </div>
+              )}
+              <div
+                className={`max-w-[80%] rounded-lg p-4 ${
+                  message.role === 'user'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-100 text-gray-900'
+                }`}
+              >
+                {message.content && (
+                  <pre className="whitespace-pre-wrap text-sm font-sans mb-2">
+                    {message.content}
                   </pre>
                 )}
-                {generatedImages.length > 0 && (
-                  <div className="mt-4 space-y-4">
-                    {generatedImages.map((img, index) => (
-                      <div key={index} className="border border-gray-200 rounded-lg overflow-hidden">
+                {message.images && message.images.length > 0 && (
+                  <div className="space-y-2 mt-2">
+                    {message.images.map((img, imgIndex) => (
+                      <div key={imgIndex} className="rounded-lg overflow-hidden">
                         <img
-                          src={`data:${img.mimeType};base64,${img.data}`}
-                          alt={`生成的图片 ${index + 1}`}
-                          className="w-full h-auto"
+                          src={img.data.startsWith('data:') ? img.data : `data:${img.mimeType};base64,${img.data}`}
+                          alt={`图片 ${imgIndex + 1}`}
+                          className="max-w-full h-auto rounded"
                         />
                       </div>
                     ))}
                   </div>
                 )}
-                <div ref={responseEndRef} />
+              </div>
+              {message.role === 'user' && (
+                <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                  我
+                </div>
+              )}
+            </div>
+          ))}
+          
+          {/* 当前正在生成的回复 */}
+          {(currentResponse || currentImages.length > 0) && (
+            <div className="flex gap-4 justify-start">
+              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                AI
+              </div>
+              <div className="max-w-[80%] rounded-lg p-4 bg-gray-100 text-gray-900">
+                {currentResponse && (
+                  <pre className="whitespace-pre-wrap text-sm font-sans mb-2">
+                    {currentResponse}
+                  </pre>
+                )}
+                {currentImages.length > 0 && (
+                  <div className="space-y-2 mt-2">
+                    {currentImages.map((img, index) => (
+                      <div key={index} className="rounded-lg overflow-hidden">
+                        <img
+                          src={`data:${img.mimeType};base64,${img.data}`}
+                          alt={`生成的图片 ${index + 1}`}
+                          className="max-w-full h-auto rounded"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {isStreaming && (
+                  <span className="inline-block w-2 h-2 bg-blue-600 rounded-full animate-pulse ml-1"></span>
+                )}
               </div>
             </div>
-          </div>
-        )}
+          )}
+          <div ref={responseEndRef} />
+        </div>
       </div>
 
       {/* 输入区域 */}

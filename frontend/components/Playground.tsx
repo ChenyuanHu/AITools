@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import Sidebar from './Sidebar';
+import { useState, useEffect } from 'react';
+import Sidebar, { loadConversations, saveConversations, createConversation, type Conversation } from './Sidebar';
 import MainContent from './MainContent';
 import SettingsPanel from './SettingsPanel';
 import { modelsAPI, generateAPI } from '@/lib/api';
@@ -17,8 +17,13 @@ interface Model {
 
 interface User {
   id: number;
-  email: string;
   name: string;
+}
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+  images?: Array<{ data: string; mimeType: string }>;
 }
 
 export default function Playground() {
@@ -29,24 +34,108 @@ export default function Playground() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // 会话管理
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+
   // 设置状态
   const [temperature, setTemperature] = useState(1);
   const [systemInstruction, setSystemInstruction] = useState('');
-  const [outputLength, setOutputLength] = useState(65536);
-  const [topP, setTopP] = useState(0.95);
-  const [grounding, setGrounding] = useState(true);
-  const [urlContext, setUrlContext] = useState(true);
 
   useEffect(() => {
     // 加载用户信息
     const userStr = localStorage.getItem('user');
     if (userStr) {
-      setUser(JSON.parse(userStr));
+      const userData = JSON.parse(userStr);
+      setUser({ id: userData.id, name: userData.name });
     }
 
     // 加载模型列表
     loadModels();
+
+    // 加载会话列表
+    const loadedConversations = loadConversations();
+    setConversations(loadedConversations);
+
+    // 如果有会话，选择最新的一个
+    if (loadedConversations.length > 0) {
+      const latest = loadedConversations.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      setCurrentConversationId(latest.id);
+      setMessages(latest.messages);
+    } else {
+      // 创建新会话
+      handleNewConversation();
+    }
   }, []);
+
+  const handleNewConversation = () => {
+    const newConversation = createConversation('新会话');
+    setConversations((prev) => {
+      const updated = [newConversation, ...prev];
+      saveConversations(updated);
+      return updated;
+    });
+    setCurrentConversationId(newConversation.id);
+    setMessages([]);
+  };
+
+  const handleSelectConversation = (id: string) => {
+    setConversations((prev) => {
+      const conversation = prev.find((c) => c.id === id);
+      if (conversation) {
+        setCurrentConversationId(id);
+        setMessages(conversation.messages);
+      }
+      return prev;
+    });
+  };
+
+  const handleDeleteConversation = (id: string) => {
+    const updated = conversations.filter((c) => c.id !== id);
+    setConversations(updated);
+    saveConversations(updated);
+    
+    if (currentConversationId === id) {
+      if (updated.length > 0) {
+        const latest = updated.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+        setCurrentConversationId(latest.id);
+        setMessages(latest.messages);
+      } else {
+        handleNewConversation();
+      }
+    }
+  };
+
+  const handleMessageSent = (message: Message) => {
+    if (!currentConversationId) return;
+
+    setMessages((prevMessages) => {
+      const updatedMessages = [...prevMessages, message];
+      
+      // 更新会话
+      setConversations((prevConversations) => {
+        const updated = prevConversations.map((conv) => {
+          if (conv.id === currentConversationId) {
+            const updatedConv = {
+              ...conv,
+              messages: updatedMessages,
+              updatedAt: Date.now(),
+              title: conv.messages.length === 0 && message.role === 'user' 
+                ? message.content.substring(0, 30) || '新会话'
+                : conv.title,
+            };
+            return updatedConv;
+          }
+          return conv;
+        });
+        saveConversations(updated);
+        return updated;
+      });
+      
+      return updatedMessages;
+    });
+  };
 
   const loadModels = async () => {
     try {
@@ -226,7 +315,14 @@ export default function Playground() {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar user={user} />
+      <Sidebar
+        user={user}
+        currentConversationId={currentConversationId}
+        conversations={conversations}
+        onSelectConversation={handleSelectConversation}
+        onNewConversation={handleNewConversation}
+        onDeleteConversation={handleDeleteConversation}
+      />
       
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* 顶部横幅 */}
@@ -249,11 +345,13 @@ export default function Playground() {
             models={models}
             selectedModel={selectedModel}
             selectedTab={selectedTab}
+            messages={messages}
             onSelectModel={setSelectedModel}
             onSelectTab={setSelectedTab}
             onGenerate={handleGenerate}
             onGenerateStream={handleGenerateStream}
             loading={loading}
+            onMessageSent={handleMessageSent}
           />
 
           {/* 设置面板 */}
