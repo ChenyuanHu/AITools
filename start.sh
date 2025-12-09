@@ -11,8 +11,8 @@ if [ ! -f "./backend/.env" ]; then
     exit 1
 fi
 
-# 创建日志目录
-mkdir -p logs
+# 创建日志目录（在项目根目录）
+mkdir -p ./logs
 
 # 启动后端服务
 echo "📦 启动后端服务..."
