@@ -24,12 +24,23 @@ cd ..
 if [ ! -d "./frontend/.next" ]; then
     echo "📦 构建前端应用..."
     cd frontend
-    npm run build
+    if ! npm run build; then
+        echo "❌ 前端构建失败，请检查错误信息"
+        exit 1
+    fi
     cd ..
+else
+    echo "✅ 前端已构建，跳过构建步骤"
 fi
 
 # 启动前端服务
 echo "📦 启动前端服务..."
+# 确保 .next 目录存在
+if [ ! -d "./frontend/.next" ]; then
+    echo "❌ 错误: 前端未构建，请先运行构建命令"
+    echo "   执行: cd frontend && npm run build"
+    exit 1
+fi
 cd frontend
 pm2 start npm --name ai-tools-frontend -- start
 cd ..
