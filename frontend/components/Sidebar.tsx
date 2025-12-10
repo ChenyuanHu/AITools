@@ -113,7 +113,7 @@ export default function Sidebar({
             <div className="text-center py-8 text-gray-500 text-sm">
               <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-50" />
               <p>还没有会话</p>
-              <p className="text-xs mt-1">点击"新建会话"开始</p>
+              <p className="text-xs mt-1">点击&ldquo;新建会话&rdquo;开始</p>
             </div>
           ) : (
             conversations

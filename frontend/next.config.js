@@ -15,6 +15,10 @@ const nextConfig = {
     // 前端使用相对路径，避免跨域问题
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || '',
   },
+  // 禁用图片优化（因为我们使用的是 base64 图片）
+  images: {
+    unoptimized: true,
+  },
 }
 
 module.exports = nextConfig

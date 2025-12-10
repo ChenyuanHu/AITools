@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { Copy, ExternalLink, Send, Image as ImageIcon, X } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
+import Image from 'next/image';
 
 interface Model {
   id: string;
