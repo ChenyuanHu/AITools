@@ -37,8 +37,7 @@ interface SidebarProps {
 import { 
   loadConversations as loadFromIndexedDB, 
   saveConversations as saveToIndexedDB,
-  removeConversation as removeFromIndexedDB,
-  migrateFromLocalStorage
+  removeConversation as removeFromIndexedDB
 } from '@/lib/indexedDB';
 
 // 导出函数，使用 IndexedDB
@@ -46,8 +45,6 @@ export async function loadConversations(): Promise<Conversation[]> {
   if (typeof window === 'undefined') return [];
   
   try {
-    // 首次加载时迁移 localStorage 数据
-    await migrateFromLocalStorage();
     return await loadFromIndexedDB();
   } catch (error) {
     console.error('加载会话失败:', error);
@@ -147,8 +144,13 @@ export default function Sidebar({
               <p className="text-xs mt-1">点击&ldquo;新建会话&rdquo;开始</p>
             </div>
           ) : (
-            conversations
-              .sort((a, b) => b.updatedAt - a.updatedAt)
+            [...conversations]
+              .sort((a, b) => {
+                // 确保 updatedAt 存在，如果不存在则使用 createdAt
+                const aTime = a.updatedAt || a.createdAt || 0;
+                const bTime = b.updatedAt || b.createdAt || 0;
+                return bTime - aTime; // 降序：最新的在前
+              })
               .map((conversation) => (
                 <div
                   key={conversation.id}

@@ -78,27 +78,37 @@ export async function loadConversations(): Promise<Conversation[]> {
     return new Promise((resolve, reject) => {
       const transaction = database.transaction([STORE_NAME], 'readonly');
       const store = transaction.objectStore(STORE_NAME);
-      const index = store.index('updatedAt');
-      const request = index.openCursor(null, 'prev'); // 降序排列（最新的在前）
-
-      const conversations: Conversation[] = [];
+      
+      // 如果没有索引，直接使用 getAll
+      let request: IDBRequest<Conversation[]>;
+      try {
+        const index = store.index('updatedAt');
+        request = index.getAll();
+      } catch (e) {
+        // 如果索引不存在，使用 getAll
+        request = store.getAll();
+      }
 
       request.onsuccess = (event) => {
-        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
-        if (cursor) {
-          conversations.push(cursor.value);
-          cursor.continue();
-        } else {
-          resolve(conversations);
-        }
+        const conversations = (event.target as IDBRequest<Conversation[]>).result || [];
+        // 按更新时间降序排序（最新的在前）
+        conversations.sort((a, b) => {
+          // 确保 updatedAt 存在，如果不存在则使用 createdAt
+          const aTime = a.updatedAt || a.createdAt || 0;
+          const bTime = b.updatedAt || b.createdAt || 0;
+          return bTime - aTime;
+        });
+        console.log(`[IndexedDB] 加载了 ${conversations.length} 个会话`, conversations.map(c => ({ id: c.id, title: c.title, updatedAt: c.updatedAt })));
+        resolve(conversations);
       };
 
-      request.onerror = () => {
+      request.onerror = (event) => {
+        console.error('[IndexedDB] 加载会话失败:', event);
         reject(new Error('Failed to load conversations'));
       };
     });
   } catch (error) {
-    console.error('加载会话失败:', error);
+    console.error('[IndexedDB] 加载会话失败:', error);
     return [];
   }
 }
@@ -108,11 +118,22 @@ async function saveConversation(conversation: Conversation): Promise<void> {
   const database = await getDB();
   return new Promise((resolve, reject) => {
     const transaction = database.transaction([STORE_NAME], 'readwrite');
-    const store = transaction.transaction([STORE_NAME], 'readwrite').objectStore(STORE_NAME);
+    const store = transaction.objectStore(STORE_NAME);
     const request = store.put(conversation);
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(new Error('Failed to save conversation'));
+    request.onsuccess = () => {
+      console.log(`[IndexedDB] 会话已保存: ${conversation.id}`);
+      resolve();
+    };
+    request.onerror = (event) => {
+      console.error('[IndexedDB] 保存会话失败:', event);
+      reject(new Error('Failed to save conversation'));
+    };
+    
+    transaction.onerror = (event) => {
+      console.error('[IndexedDB] 事务失败:', event);
+      reject(new Error('Transaction failed'));
+    };
   });
 }
 
@@ -124,8 +145,19 @@ async function deleteConversation(id: string): Promise<void> {
     const store = transaction.objectStore(STORE_NAME);
     const request = store.delete(id);
 
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(new Error('Failed to delete conversation'));
+    request.onsuccess = () => {
+      console.log(`[IndexedDB] 会话已删除: ${id}`);
+      resolve();
+    };
+    request.onerror = (event) => {
+      console.error('[IndexedDB] 删除会话失败:', event);
+      reject(new Error('Failed to delete conversation'));
+    };
+    
+    transaction.onerror = (event) => {
+      console.error('[IndexedDB] 删除事务失败:', event);
+      reject(new Error('Transaction failed'));
+    };
   });
 }
 
@@ -167,22 +199,46 @@ export async function saveConversations(conversations: Conversation[]): Promise<
   const MAX_SIZE = 100 * 1024 * 1024; // 100MB
 
   try {
-    // 先保存所有会话
+    // 确保数据库已初始化
+    const database = await getDB();
+    
+    console.log(`[IndexedDB] 开始保存 ${conversations.length} 个会话...`);
+    
+    // 获取当前 IndexedDB 中的所有会话 ID
+    const existingConversations = await loadConversations();
+    const existingIds = new Set(existingConversations.map(c => c.id));
+    const newIds = new Set(conversations.map(c => c.id));
+    
+    // 删除不在新列表中的会话（被删除的会话）
+    const idsToDelete = [...existingIds].filter(id => !newIds.has(id));
+    
+    if (idsToDelete.length > 0) {
+      console.log(`[IndexedDB] 需要删除 ${idsToDelete.length} 个会话:`, idsToDelete);
+      for (const id of idsToDelete) {
+        await deleteConversation(id);
+      }
+    }
+    
+    // 保存所有会话（新增或更新的）
     for (const conversation of conversations) {
       await saveConversation(conversation);
     }
+    
+    console.log(`[IndexedDB] 所有会话保存完成`);
 
     // 检查总大小，如果超过限制则清理
     const totalSize = await getTotalSize();
+    console.log(`[IndexedDB] 当前总大小: ${(totalSize / 1024 / 1024).toFixed(2)}MB`);
+    
     if (totalSize > MAX_SIZE) {
-      console.warn(`存储空间超过 ${MAX_SIZE / 1024 / 1024}MB，开始清理旧会话...`);
+      console.warn(`[IndexedDB] 存储空间超过 ${MAX_SIZE / 1024 / 1024}MB，开始清理旧会话...`);
       const deletedCount = await cleanupOldConversations(MAX_SIZE);
       if (deletedCount > 0) {
-        console.warn(`已清理 ${deletedCount} 个旧会话`);
+        console.warn(`[IndexedDB] 已清理 ${deletedCount} 个旧会话`);
       }
     }
   } catch (error) {
-    console.error('保存会话失败:', error);
+    console.error('[IndexedDB] 保存会话失败:', error);
     throw error;
   }
 }
@@ -199,44 +255,4 @@ export async function removeConversation(id: string): Promise<void> {
   }
 }
 
-// 迁移 localStorage 数据到 IndexedDB（一次性操作）
-export async function migrateFromLocalStorage(): Promise<void> {
-  if (typeof window === 'undefined') return;
-
-  const STORAGE_KEY = 'ai_conversations';
-  const MIGRATION_KEY = 'ai_conversations_migrated';
-
-  // 检查是否已经迁移过
-  if (localStorage.getItem(MIGRATION_KEY)) {
-    return;
-  }
-
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      const conversations: Conversation[] = JSON.parse(stored);
-      if (conversations.length > 0) {
-        console.log(`开始迁移 ${conversations.length} 个会话到 IndexedDB...`);
-        
-        // 初始化数据库
-        await initDB();
-        
-        // 保存到 IndexedDB
-        for (const conversation of conversations) {
-          await saveConversation(conversation);
-        }
-        
-        console.log('迁移完成');
-      }
-    }
-    
-    // 标记为已迁移
-    localStorage.setItem(MIGRATION_KEY, 'true');
-    
-    // 可选：删除 localStorage 中的数据（保留作为备份）
-    // localStorage.removeItem(STORAGE_KEY);
-  } catch (error) {
-    console.error('迁移数据失败:', error);
-  }
-}
 
