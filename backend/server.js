@@ -457,6 +457,22 @@ app.post('/api/generate', authenticateToken, upload.array('images', 5), async (r
 // 流式生成内容
 app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), async (req, res) => {
   const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  // 处理multer文件上传错误
+  if (req.fileValidationError) {
+    console.error(`[流式生成][${requestId}] ❌ 文件验证错误: ${req.fileValidationError}`);
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.write(`data: ${JSON.stringify({ 
+      error: 'FileValidationError',
+      message: req.fileValidationError
+    })}\n\n`);
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.end();
+    return;
+  }
   console.log(`[流式生成][${requestId}] ========== 请求开始 ==========`);
   console.log(`[流式生成][${requestId}] 客户端IP: ${req.ip || req.connection.remoteAddress}`);
   console.log(`[流式生成][${requestId}] 请求头:`, JSON.stringify({
@@ -487,7 +503,18 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
       console.error(`[流式生成][${requestId}] ❌ 解析历史消息失败:`, e);
     }
 
-    const { prompt, modelId = 'gemini-3-pro-preview', temperature = 1, systemInstruction, thinkingBudget, includeThoughts, thinkingLevel } = req.body;
+    const { 
+      prompt, 
+      modelId = 'gemini-3-pro-preview', 
+      temperature = 1, 
+      systemInstruction, 
+      thinkingBudget, 
+      includeThoughts, 
+      thinkingLevel,
+      aspectRatio,
+      imageSize,
+      responseModalities
+    } = req.body;
     console.log(`[流式生成][${requestId}] 📋 请求参数:`, {
       modelId,
       temperature,
@@ -621,32 +648,77 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
     console.log(`[流式生成][${requestId}] 🎨 是否为图片生成模型: ${isImageModel}`);
     
     // 准备生成配置
-    const generationConfig = {
+    let generationConfig = {
       temperature: parseFloat(temperature),
       topP: 0.95,
       maxOutputTokens: 65536,
-      ...(isImageModel && { responseModalities: ['TEXT', 'IMAGE'] }),
     };
+    
+    // 图片生成配置
+    if (isImageModel) {
+      // Response Modalities
+      let modalities = ['TEXT', 'IMAGE']; // 默认值
+      if (responseModalities) {
+        try {
+          modalities = typeof responseModalities === 'string' 
+            ? JSON.parse(responseModalities) 
+            : responseModalities;
+        } catch (e) {
+          console.log(`[流式生成][${requestId}] ⚠️  解析responseModalities失败，使用默认值`);
+        }
+      }
+      generationConfig.responseModalities = modalities;
+      
+      // Image Config
+      const imageConfig = {};
+      if (aspectRatio) {
+        imageConfig.aspectRatio = aspectRatio;
+        console.log(`[流式生成][${requestId}] 🖼️  设置宽高比: ${aspectRatio}`);
+      }
+      if (imageSize && modelId === 'gemini-3-pro-image-preview') {
+        imageConfig.imageSize = imageSize;
+        console.log(`[流式生成][${requestId}] 🖼️  设置图片分辨率: ${imageSize}`);
+      }
+      
+      if (Object.keys(imageConfig).length > 0) {
+        generationConfig.imageConfig = imageConfig;
+      }
+    }
     
     // 准备thinking配置（根据Gemini文档）
     // Gemini 3 Pro使用thinkingLevel ("low" 或 "high")
     // Gemini 2.5系列使用thinkingBudget
-    // 需要设置includeThoughts: true来输出thinking
+    // ⚠️ 重要：根据文档，只有 gemini-3-pro-image-preview 支持 thinking
+    // gemini-2.5-flash-image 不支持 thinking
     const isGemini3 = modelId.includes('gemini-3') || modelId.includes('3-pro');
     const shouldIncludeThoughts = includeThoughts === 'true' || includeThoughts === true || includeThoughts === '1';
     
+    // 检查模型是否支持 thinking
+    // 根据文档：只有 gemini-3-pro-image-preview 支持 thinking，gemini-2.5-flash-image 不支持
+    const supportsThinking = !isImageModel || modelId === 'gemini-3-pro-image-preview';
+    
     let thinkingConfig = null;
-    if (shouldIncludeThoughts) {
+    if (shouldIncludeThoughts && supportsThinking) {
       if (isGemini3) {
-        // Gemini 3 Pro使用thinkingLevel
-        const level = thinkingLevel || 'high'; // 默认high
-        thinkingConfig = {
-          thinkingLevel: level,
-          includeThoughts: true
-        };
-        console.log(`[流式生成][${requestId}] 💭 配置thinking (Gemini 3): thinkingLevel=${level}, includeThoughts=true`);
+        // Gemini 3 Pro Image Preview: thinking默认启用，不支持thinkingLevel参数
+        // 根据文档：The Gemini 3 Pro Image Preview model is a thinking model and uses a reasoning process ("Thinking") for complex prompts. This feature is enabled by default and cannot be disabled in the API.
+        if (modelId === 'gemini-3-pro-image-preview') {
+          // Gemini 3 Pro Image Preview 只使用 includeThoughts，不使用 thinkingLevel
+          thinkingConfig = {
+            includeThoughts: true
+          };
+          console.log(`[流式生成][${requestId}] 💭 配置thinking (Gemini 3 Pro Image): includeThoughts=true (thinking默认启用，不支持thinkingLevel)`);
+        } else {
+          // 其他 Gemini 3 Pro 模型使用 thinkingLevel
+          const level = thinkingLevel || 'high'; // 默认high
+          thinkingConfig = {
+            thinkingLevel: level,
+            includeThoughts: true
+          };
+          console.log(`[流式生成][${requestId}] 💭 配置thinking (Gemini 3 Pro): thinkingLevel=${level}, includeThoughts=true`);
+        }
       } else {
-        // Gemini 2.5系列使用thinkingBudget
+        // Gemini 2.5系列使用thinkingBudget（仅非图片模型）
         const budget = thinkingBudget !== undefined ? parseInt(thinkingBudget) : -1; // -1表示动态thinking
         thinkingConfig = {
           thinkingBudget: budget,
@@ -655,7 +727,11 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
         console.log(`[流式生成][${requestId}] 💭 配置thinking (Gemini 2.5): thinkingBudget=${budget}, includeThoughts=true`);
       }
     } else {
-      console.log(`[流式生成][${requestId}] ⚡ thinking未启用 (includeThoughts=false或未设置)`);
+      if (shouldIncludeThoughts && !supportsThinking) {
+        console.log(`[流式生成][${requestId}] ⚠️  模型 ${modelId} 不支持 thinking，已忽略 thinkingConfig`);
+      } else {
+        console.log(`[流式生成][${requestId}] ⚡ thinking未启用 (includeThoughts=false或未设置)`);
+      }
     }
     
     // 构建请求配置
@@ -846,7 +922,8 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
           }
         }
         
-        // 收集图片数据（不立即发送，避免大数据导致的问题）
+        // 收集图片数据（区分thinking过程中的临时图片和最终图片）
+        // 根据文档：Gemini 3 Pro Image Preview 在thinking过程中会生成临时图片，只有最后一个才是最终图片
         try {
           const candidates = chunk.candidates;
           if (candidates && candidates.length > 0) {
@@ -854,12 +931,29 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
             if (content && content.parts) {
               for (const part of content.parts) {
                 if (part.inlineData) {
-                  imageChunkCount++;
-                  console.log(`[流式生成][${requestId}] 🖼️  收集到图片数据[${imageChunkCount}], MIME类型: ${part.inlineData.mimeType}, 数据长度: ${part.inlineData.data?.length || 0}`);
-                  collectedImages.push({
-                    data: part.inlineData.data,
-                    mimeType: part.inlineData.mimeType
-                  });
+                  if (part.thought === true) {
+                    // 这是thinking过程中的图片（临时图片）
+                    // 根据文档：The last image within Thinking is also the final rendered image.
+                    // 我们只保留最后一个thinking图片作为最终图片
+                    imageChunkCount++;
+                    console.log(`[流式生成][${requestId}] 🖼️  收集到thinking过程中的图片[${imageChunkCount}], MIME类型: ${part.inlineData.mimeType}, 数据长度: ${part.inlineData.data?.length || 0}`);
+                    // 清空之前的thinking图片，只保留最后一个
+                    collectedImages = collectedImages.filter(img => !img.isThinkingImage);
+                    collectedImages.push({
+                      data: part.inlineData.data,
+                      mimeType: part.inlineData.mimeType,
+                      isThinkingImage: true // 标记为thinking图片
+                    });
+                  } else {
+                    // 这是非thinking的图片（最终图片）
+                    imageChunkCount++;
+                    console.log(`[流式生成][${requestId}] 🖼️  收集到最终图片[${imageChunkCount}], MIME类型: ${part.inlineData.mimeType}, 数据长度: ${part.inlineData.data?.length || 0}`);
+                    collectedImages.push({
+                      data: part.inlineData.data,
+                      mimeType: part.inlineData.mimeType,
+                      isThinkingImage: false
+                    });
+                  }
                 }
               }
             }
@@ -885,13 +979,20 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
       });
       
       // 流结束后，一次性发送所有图片
-      if (collectedImages.length > 0 && !res.closed && !res.destroyed) {
-        console.log(`[流式生成][${requestId}] 🖼️  流结束，准备发送 ${collectedImages.length} 张图片`);
-        for (let i = 0; i < collectedImages.length; i++) {
-          const img = collectedImages[i];
+      // 优先发送非thinking的图片，如果没有则发送最后一个thinking图片
+      const finalImages = collectedImages.filter(img => !img.isThinkingImage);
+      const thinkingImages = collectedImages.filter(img => img.isThinkingImage);
+      
+      // 如果有非thinking的图片，发送这些；否则发送最后一个thinking图片
+      const imagesToSend = finalImages.length > 0 ? finalImages : (thinkingImages.length > 0 ? [thinkingImages[thinkingImages.length - 1]] : []);
+      
+      if (imagesToSend.length > 0 && !res.closed && !res.destroyed) {
+        console.log(`[流式生成][${requestId}] 🖼️  流结束，准备发送 ${imagesToSend.length} 张图片 (${finalImages.length} 张最终图片, ${thinkingImages.length} 张thinking图片)`);
+        for (let i = 0; i < imagesToSend.length; i++) {
+          const img = imagesToSend[i];
           try {
-            const imageDataSize = JSON.stringify({image: img}).length;
-            console.log(`[流式生成][${requestId}] 📤 发送图片[${i+1}/${collectedImages.length}], JSON大小: ${imageDataSize} bytes`);
+            const imageDataSize = JSON.stringify({image: {data: img.data, mimeType: img.mimeType}}).length;
+            console.log(`[流式生成][${requestId}] 📤 发送图片[${i+1}/${imagesToSend.length}], JSON大小: ${imageDataSize} bytes`);
             res.write(`data: ${JSON.stringify({ 
               image: {
                 data: img.data,
@@ -950,13 +1051,27 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
       if (sseHeadersSet && !res.closed && !res.destroyed) {
         try {
           console.log(`[流式生成][${requestId}] 📤 尝试发送SSE格式错误消息...`);
+          
+          // 提取详细的错误信息
+          let errorMessage = streamError.message || '生成内容失败';
+          let errorType = streamError.constructor.name || 'Error';
+          
+          // 如果是Google API错误，提取详细信息
+          if (streamError.status || streamError.statusText) {
+            errorMessage = `API错误 (${streamError.status || 'Unknown'}): ${streamError.message || streamError.statusText || '未知错误'}`;
+            if (streamError.errorDetails) {
+              errorMessage += `\n详细信息: ${JSON.stringify(streamError.errorDetails)}`;
+            }
+          }
+          
           res.write(`data: ${JSON.stringify({ 
-            error: '生成内容失败',
-            message: streamError.message 
+            error: errorType,
+            message: errorMessage,
+            details: streamError.stack ? streamError.stack.substring(0, 500) : undefined
           })}\n\n`);
           res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
           res.end();
-          console.log(`[流式生成][${requestId}] ✅ 错误消息已发送`);
+          console.log(`[流式生成][${requestId}] ✅ 错误消息已发送: ${errorMessage}`);
         } catch (e) {
           console.error(`[流式生成][${requestId}] ❌ 发送错误消息失败:`, e);
           console.error(`[流式生成][${requestId}] ❌ 发送错误详情:`, {
@@ -1025,13 +1140,32 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
       if (!res.closed && !res.destroyed) {
         try {
           console.log(`[流式生成][${requestId}] 📤 发送SSE格式错误消息...`);
+          
+          // 提取详细的错误信息
+          let errorMessage = error.message || '生成内容失败';
+          let errorType = error.constructor.name || 'Error';
+          
+          // 如果是Google API错误，提取详细信息
+          if (error.status || error.statusText) {
+            errorMessage = `API错误 (${error.status || 'Unknown'}): ${error.message || error.statusText || '未知错误'}`;
+            if (error.errorDetails) {
+              errorMessage += `\n详细信息: ${JSON.stringify(error.errorDetails)}`;
+            }
+          }
+          
+          // 如果是文件类型错误，提供更友好的提示
+          if (error.message && error.message.includes('只支持图片文件')) {
+            errorMessage = `文件类型错误: ${error.message}\n请确保上传的文件是图片格式 (jpeg, jpg, png, gif, webp)`;
+          }
+          
           res.write(`data: ${JSON.stringify({ 
-            error: '生成内容失败',
-            message: error.message 
+            error: errorType,
+            message: errorMessage,
+            details: error.stack ? error.stack.substring(0, 500) : undefined
           })}\n\n`);
           res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
           res.end();
-          console.log(`[流式生成][${requestId}] ✅ 错误消息已发送`);
+          console.log(`[流式生成][${requestId}] ✅ 错误消息已发送: ${errorMessage}`);
         } catch (e) {
           console.error(`[流式生成][${requestId}] ❌ 发送错误消息失败:`, e);
           console.error(`[流式生成][${requestId}] ❌ 发送错误详情:`, {

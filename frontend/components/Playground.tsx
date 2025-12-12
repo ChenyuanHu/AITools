@@ -46,6 +46,10 @@ export default function Playground() {
   const [systemInstruction, setSystemInstruction] = useState('');
   const [includeThoughts, setIncludeThoughts] = useState(true); // 默认启用thinking
   const [thinkingLevel, setThinkingLevel] = useState('low'); // 默认low级别
+  // 图片生成参数
+  const [aspectRatio, setAspectRatio] = useState('1:1');
+  const [imageSize, setImageSize] = useState('1K');
+  const [responseModalities, setResponseModalities] = useState<string[]>(['TEXT', 'IMAGE']);
 
   useEffect(() => {
     // 加载用户信息
@@ -195,6 +199,9 @@ export default function Playground() {
         history: history, // 传递历史消息
         includeThoughts: includeThoughts, // 使用配置的thinking设置
         thinkingLevel: thinkingLevel, // 使用配置的thinking级别
+        aspectRatio: selectedModel.id.includes('image') ? aspectRatio : undefined,
+        imageSize: selectedModel.id === 'gemini-3-pro-image-preview' ? imageSize : undefined,
+        responseModalities: selectedModel.id.includes('image') ? responseModalities : undefined,
       });
 
       const reader = response.body?.getReader();
@@ -237,6 +244,13 @@ export default function Playground() {
                 if (onComplete) onComplete();
                 setLoading(false);
                 return;
+              }
+              // 处理错误数据
+              if (data.error) {
+                console.error('[前端] 收到错误数据:', data.error, data.message);
+                const error = new Error(data.message || data.error || '生成失败');
+                (error as any).details = data.details;
+                throw error;
               }
               // 处理thinking数据（思考过程）
               if (data.thinking) {
@@ -282,6 +296,13 @@ export default function Playground() {
                 setLoading(false);
                 return;
               }
+              // 处理错误数据
+              if (data.error) {
+                console.error('[前端] 收到错误数据（拼接后）:', data.error, data.message);
+                const error = new Error(data.message || data.error || '生成失败');
+                (error as any).details = data.details;
+                throw error;
+              }
               // 处理thinking数据（思考过程）
               if (data.thinking) {
                 console.log('[前端] 收到thinking数据（拼接后）:', data.thinking.substring(0, 100));
@@ -315,6 +336,13 @@ export default function Playground() {
             setLoading(false);
             return;
           }
+          // 处理错误数据
+          if (data.error) {
+            console.error('[前端] 收到错误数据（最后一块）:', data.error, data.message);
+            const error = new Error(data.message || data.error || '生成失败');
+            (error as any).details = data.details;
+            throw error;
+          }
           if (data.text) {
             onChunk(data.text);
           }
@@ -325,6 +353,9 @@ export default function Playground() {
             }
           }
         } catch (e) {
+          if (e instanceof Error && e.message !== '生成失败') {
+            throw e; // 如果是我们抛出的错误，继续抛出
+          }
           console.error('[前端] 处理最后数据块时出错:', e);
         }
       }
@@ -423,10 +454,16 @@ export default function Playground() {
                 systemInstruction={systemInstruction}
                 includeThoughts={includeThoughts}
                 thinkingLevel={thinkingLevel}
+                aspectRatio={aspectRatio}
+                imageSize={imageSize}
+                responseModalities={responseModalities}
                 onTemperatureChange={setTemperature}
                 onSystemInstructionChange={setSystemInstruction}
                 onIncludeThoughtsChange={setIncludeThoughts}
                 onThinkingLevelChange={setThinkingLevel}
+                onAspectRatioChange={setAspectRatio}
+                onImageSizeChange={setImageSize}
+                onResponseModalitiesChange={setResponseModalities}
                 onClose={() => setShowSettings(false)}
               />
             </div>
@@ -441,10 +478,16 @@ export default function Playground() {
                 systemInstruction={systemInstruction}
                 includeThoughts={includeThoughts}
                 thinkingLevel={thinkingLevel}
+                aspectRatio={aspectRatio}
+                imageSize={imageSize}
+                responseModalities={responseModalities}
                 onTemperatureChange={setTemperature}
                 onSystemInstructionChange={setSystemInstruction}
                 onIncludeThoughtsChange={setIncludeThoughts}
                 onThinkingLevelChange={setThinkingLevel}
+                onAspectRatioChange={setAspectRatio}
+                onImageSizeChange={setImageSize}
+                onResponseModalitiesChange={setResponseModalities}
                 onClose={() => setShowSettings(false)}
               />
             </div>

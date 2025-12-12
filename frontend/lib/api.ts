@@ -106,6 +106,9 @@ export const generateAPI = {
     includeThoughts?: boolean; // 是否包含thinking过程
     thinkingLevel?: string; // Gemini 3 Pro的thinking级别: "low" 或 "high"
     thinkingBudget?: number; // Gemini 2.5系列的thinking预算
+    aspectRatio?: string; // 图片宽高比
+    imageSize?: string; // 图片分辨率 (1K, 2K, 4K)
+    responseModalities?: string[]; // 响应类型 (TEXT, IMAGE)
   }) => {
     const formData = new FormData();
     formData.append('prompt', data.prompt);
@@ -122,6 +125,17 @@ export const generateAPI = {
     }
     if (data.thinkingBudget !== undefined) {
       formData.append('thinkingBudget', data.thinkingBudget.toString());
+    }
+    
+    // 添加图片生成参数
+    if (data.aspectRatio) {
+      formData.append('aspectRatio', data.aspectRatio);
+    }
+    if (data.imageSize) {
+      formData.append('imageSize', data.imageSize);
+    }
+    if (data.responseModalities && data.responseModalities.length > 0) {
+      formData.append('responseModalities', JSON.stringify(data.responseModalities));
     }
     
     if (data.history && data.history.length > 0) {
