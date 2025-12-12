@@ -90,12 +90,14 @@ export async function POST(request: NextRequest) {
       
       console.log(`[Next.js代理][${requestId}] 📥 开始转发流式响应...`);
       
-      // 返回流式响应
+      // 返回流式响应，确保不被缓冲
       return new Response(backendResponse.body, {
         headers: {
           'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
+          'Cache-Control': 'no-cache, no-transform',
           'Connection': 'keep-alive',
+          'X-Accel-Buffering': 'no', // 禁用 Nginx 缓冲
+          'Transfer-Encoding': 'chunked', // 确保分块传输
         },
       });
     } catch (fetchError: any) {

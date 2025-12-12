@@ -462,9 +462,10 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
   if (req.fileValidationError) {
     console.error(`[流式生成][${requestId}] ❌ 文件验证错误: ${req.fileValidationError}`);
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader('X-Accel-Buffering', 'no'); // 禁用 Nginx 缓冲
+    res.setHeader('Transfer-Encoding', 'chunked'); // 确保分块传输
     res.write(`data: ${JSON.stringify({ 
       error: 'FileValidationError',
       message: req.fileValidationError
@@ -910,6 +911,10 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
           }
           try {
             res.write(`data: ${JSON.stringify({ text: regularText })}\n\n`);
+            // 立即刷新，确保数据及时发送到客户端
+            if (typeof res.flush === 'function') {
+              res.flush();
+            }
           } catch (writeError) {
             console.error(`[流式生成][${requestId}] ❌ 写入文本chunk失败:`, writeError);
             console.error(`[流式生成][${requestId}] ❌ 写入错误详情:`, {
