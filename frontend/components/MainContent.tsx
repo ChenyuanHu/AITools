@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { Copy, ExternalLink, Send, Image as ImageIcon, X } from 'lucide-react';
+import { Copy, ExternalLink, Send, Image as ImageIcon, X, Edit2, Check, X as XIcon } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import Image from 'next/image';
 import MarkdownRenderer from './MarkdownRenderer';
@@ -40,6 +40,8 @@ interface MainContentProps {
   ) => Promise<void>;
   loading: boolean;
   onMessageSent: (message: Message) => void;
+  onEditMessage?: (messageIndex: number, newContent: string, newImages?: File[]) => void; // 编辑消息回调
+  onTruncateMessages?: (keepUntilIndex: number) => void; // 截断消息回调
 }
 
 export default function MainContent({
@@ -53,6 +55,8 @@ export default function MainContent({
   onGenerateStream,
   loading,
   onMessageSent,
+  onEditMessage,
+  onTruncateMessages,
 }: MainContentProps) {
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState<File[]>([]);
@@ -60,6 +64,9 @@ export default function MainContent({
   const [currentThinking, setCurrentThinking] = useState(''); // thinking内容状态
   const [currentImages, setCurrentImages] = useState<Array<{ data: string; mimeType: string }>>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null); // 正在编辑的消息索引
+  const [editingContent, setEditingContent] = useState(''); // 编辑中的内容
+  const [editingImages, setEditingImages] = useState<File[]>([]); // 编辑中的图片
   const responseEndRef = useRef<HTMLDivElement>(null);
 
   const filteredModels = models.filter((model) => {
@@ -278,7 +285,10 @@ export default function MainContent({
 
         {/* 对话历史 */}
         <div className="mt-4 md:mt-8 max-w-4xl mx-auto space-y-4 md:space-y-6">
-          {messages.map((message, index) => (
+          {messages.map((message, index) => {
+            const isEditing = editingIndex === index && message.role === 'user';
+            
+            return (
             <div
               key={index}
               className={`flex gap-2 md:gap-4 ${
@@ -291,43 +301,225 @@ export default function MainContent({
                 </div>
               )}
               <div
-                className={`max-w-[85%] md:max-w-[80%] rounded-lg p-3 md:p-4 ${
+                className={`max-w-[85%] md:max-w-[80%] rounded-lg p-3 md:p-4 relative group ${
                   message.role === 'user'
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 text-gray-900'
                 }`}
               >
-                {/* 显示thinking内容 - 使用更明显的样式区分 */}
-                {message.thinking && message.thinking.trim() && (
-                  <div className="mb-4 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 border-l-4 border-purple-400 rounded-r-lg shadow-sm">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-purple-600 font-bold text-sm">💭</span>
-                      <span className="text-purple-700 font-semibold text-sm">思考过程</span>
-                    </div>
-                    {/* 使用Markdown渲染thinking内容 */}
-                    <div className="text-purple-800 text-xs md:text-sm leading-relaxed break-words bg-white/50 p-2 rounded border border-purple-200">
-                      <MarkdownRenderer content={message.thinking} />
-                    </div>
-                  </div>
+                {/* 用户消息的编辑按钮 */}
+                {message.role === 'user' && !isEditing && (
+                  <button
+                    onClick={() => {
+                      setEditingIndex(index);
+                      setEditingContent(message.content);
+                      setEditingImages([]);
+                    }}
+                    className="absolute -left-8 md:-left-10 top-2 p-1 text-gray-400 hover:text-blue-600 bg-white rounded shadow-sm transition-colors"
+                    title="编辑消息"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
                 )}
-                {/* 使用Markdown渲染正文内容 */}
-                {message.content && (
-                  <div className="text-xs md:text-sm text-gray-900 prose prose-sm max-w-none">
-                    <MarkdownRenderer content={message.content} />
-                  </div>
-                )}
-                {message.images && message.images.length > 0 && (
-                  <div className="space-y-2 mt-2">
-                    {message.images.map((img, imgIndex) => (
-                      <div key={imgIndex} className="rounded-lg overflow-hidden">
-                        <img
-                          src={img.data.startsWith('data:') ? img.data : `data:${img.mimeType};base64,${img.data}`}
-                          alt={`图片 ${imgIndex + 1}`}
-                          className="max-w-full h-auto rounded"
-                        />
+                
+                {/* 编辑模式 */}
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={editingContent}
+                      onChange={(e) => setEditingContent(e.target.value)}
+                      className="w-full p-2 border border-gray-300 rounded text-gray-900 text-sm md:text-base resize-none"
+                      rows={3}
+                      autoFocus
+                    />
+                    {/* 图片预览（如果有） */}
+                    {message.images && message.images.length > 0 && (
+                      <div className="flex gap-2 overflow-x-auto pb-2">
+                        {message.images.map((img, imgIndex) => (
+                          <div key={imgIndex} className="relative flex-shrink-0">
+                            <img
+                              src={img.data.startsWith('data:') ? img.data : `data:${img.mimeType};base64,${img.data}`}
+                              alt={`图片 ${imgIndex + 1}`}
+                              className="w-16 h-16 md:w-20 md:h-20 object-cover rounded-lg border border-gray-200"
+                            />
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        onClick={() => {
+                          setEditingIndex(null);
+                          setEditingContent('');
+                          setEditingImages([]);
+                        }}
+                        className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors flex items-center gap-1"
+                      >
+                        <XIcon className="w-4 h-4" />
+                        取消
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!editingContent.trim()) return;
+                          
+                          // 截断消息：删除编辑这一轮次之后的所有消息
+                          if (onTruncateMessages) {
+                            onTruncateMessages(index);
+                          }
+                          
+                          // 更新消息内容
+                          if (onEditMessage) {
+                            await onEditMessage(index, editingContent.trim(), editingImages.length > 0 ? editingImages : undefined);
+                          }
+                          
+                          // 重新发送
+                          setEditingIndex(null);
+                          setEditingContent('');
+                          setEditingImages([]);
+                          
+                          // 准备发送
+                          const userPrompt = editingContent.trim();
+                          const userImages = editingImages.length > 0 ? editingImages : [];
+                          
+                          // 将图片转换为 base64
+                          const imagePromises = userImages.map((file) => {
+                            return new Promise<{ data: string; mimeType: string }>((resolve) => {
+                              const reader = new FileReader();
+                              reader.onloadend = () => {
+                                const base64 = reader.result as string;
+                                resolve({
+                                  data: base64.split(',')[1] || base64,
+                                  mimeType: file.type,
+                                });
+                              };
+                              reader.readAsDataURL(file);
+                            });
+                          });
+                          
+                          const imageData = await Promise.all(imagePromises);
+                          
+                          // 更新用户消息（如果 onEditMessage 没有处理）
+                          if (!onEditMessage) {
+                            onMessageSent({
+                              role: 'user',
+                              content: userPrompt,
+                              images: imageData.length > 0 ? imageData : undefined,
+                            });
+                          }
+                          
+                          // 清空输入
+                          setCurrentResponse('');
+                          setCurrentThinking('');
+                          setCurrentImages([]);
+                          setIsStreaming(true);
+                          
+                          try {
+                            let fullResponse = '';
+                            let fullThinking = '';
+                            const responseImages: Array<{ data: string; mimeType: string }> = [];
+                            
+                            // 获取截断后的历史消息
+                            const truncatedMessages = messages.slice(0, index);
+                            
+                            await onGenerateStream(
+                              userPrompt,
+                              userImages,
+                              truncatedMessages,
+                              (chunk) => {
+                                fullResponse += chunk;
+                                setCurrentResponse(fullResponse);
+                                setTimeout(() => {
+                                  responseEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                                }, 0);
+                              },
+                              (image) => {
+                                if (!image.data || !image.mimeType) return;
+                                responseImages.push(image);
+                                setCurrentImages([...responseImages]);
+                                setTimeout(() => {
+                                  responseEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                                }, 0);
+                              },
+                              () => {
+                                setIsStreaming(false);
+                                if (fullResponse || responseImages.length > 0 || fullThinking) {
+                                  onMessageSent({
+                                    role: 'assistant' as const,
+                                    content: fullResponse || '',
+                                    images: responseImages.length > 0 ? responseImages : undefined,
+                                    thinking: fullThinking && fullThinking.trim() ? fullThinking : undefined,
+                                  });
+                                }
+                                setTimeout(() => {
+                                  setCurrentResponse('');
+                                  setCurrentThinking('');
+                                  setCurrentImages([]);
+                                }, 100);
+                              },
+                              (thinking: string) => {
+                                fullThinking += thinking;
+                                setCurrentThinking((prev) => prev + thinking);
+                                setTimeout(() => {
+                                  responseEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+                                }, 0);
+                              }
+                            );
+                          } catch (error: any) {
+                            setIsStreaming(false);
+                            const errorMessage = error.message || '生成失败';
+                            onMessageSent({
+                              role: 'assistant',
+                              content: `❌ **错误**: ${errorMessage}`,
+                            });
+                            setCurrentResponse('');
+                            setCurrentImages([]);
+                            setCurrentThinking('');
+                          }
+                        }}
+                        className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors flex items-center gap-1"
+                      >
+                        <Check className="w-4 h-4" />
+                        重新发送
+                      </button>
+                    </div>
                   </div>
+                ) : (
+                  <>
+                    {/* 显示thinking内容 - 使用更明显的样式区分 */}
+                    {message.thinking && message.thinking.trim() && (
+                      <div className="mb-4 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 border-l-4 border-purple-400 rounded-r-lg shadow-sm">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-purple-600 font-bold text-sm">💭</span>
+                          <span className="text-purple-700 font-semibold text-sm">思考过程</span>
+                        </div>
+                        {/* 使用Markdown渲染thinking内容 */}
+                        <div className="text-purple-800 text-xs md:text-sm leading-relaxed break-words bg-white/50 p-2 rounded border border-purple-200">
+                          <MarkdownRenderer content={message.thinking} />
+                        </div>
+                      </div>
+                    )}
+                    {/* 使用Markdown渲染正文内容 */}
+                    {message.content && (
+                      <div className={`text-xs md:text-sm prose prose-sm max-w-none ${
+                        message.role === 'user' ? 'text-white' : 'text-gray-900'
+                      }`}>
+                        <MarkdownRenderer content={message.content} />
+                      </div>
+                    )}
+                    {message.images && message.images.length > 0 && (
+                      <div className="space-y-2 mt-2">
+                        {message.images.map((img, imgIndex) => (
+                          <div key={imgIndex} className="rounded-lg overflow-hidden">
+                            <img
+                              src={img.data.startsWith('data:') ? img.data : `data:${img.mimeType};base64,${img.data}`}
+                              alt={`图片 ${imgIndex + 1}`}
+                              className="max-w-full h-auto rounded"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
               {message.role === 'user' && (
@@ -336,7 +528,7 @@ export default function MainContent({
                 </div>
               )}
             </div>
-          ))}
+          )})}
           
           {/* 当前正在生成的回复 */}
           {(currentResponse || currentThinking || currentImages.length > 0) && (

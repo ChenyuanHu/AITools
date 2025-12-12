@@ -161,6 +161,93 @@ export default function Playground() {
     });
   };
 
+  // 编辑消息
+  const handleEditMessage = async (messageIndex: number, newContent: string, newImages?: File[]) => {
+    if (!currentConversationId) return;
+    
+    // 转换图片（如果有）
+    let imageData: Array<{ data: string; mimeType: string }> | undefined;
+    if (newImages && newImages.length > 0) {
+      imageData = await Promise.all(
+        newImages.map((file) => {
+          return new Promise<{ data: string; mimeType: string }>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64 = reader.result as string;
+              resolve({
+                data: base64.split(',')[1] || base64,
+                mimeType: file.type,
+              });
+            };
+            reader.readAsDataURL(file);
+          });
+        })
+      );
+    }
+    
+    setMessages((prevMessages) => {
+      const updatedMessages = [...prevMessages];
+      
+      // 更新用户消息
+      if (updatedMessages[messageIndex] && updatedMessages[messageIndex].role === 'user') {
+        updatedMessages[messageIndex] = {
+          ...updatedMessages[messageIndex],
+          content: newContent,
+          images: imageData && imageData.length > 0 ? imageData : updatedMessages[messageIndex].images,
+        };
+      }
+      
+      // 更新会话
+      setConversations((prevConversations) => {
+        const updated = prevConversations.map((conv) => {
+          if (conv.id === currentConversationId) {
+            return {
+              ...conv,
+              messages: updatedMessages,
+              updatedAt: Date.now(),
+            };
+          }
+          return conv;
+        });
+        saveConversations(updated).catch(error => {
+          console.error('保存会话失败:', error);
+        });
+        return updated;
+      });
+      
+      return updatedMessages;
+    });
+  };
+
+  // 截断消息（删除指定索引之后的所有消息）
+  const handleTruncateMessages = (keepUntilIndex: number) => {
+    if (!currentConversationId) return;
+    
+    setMessages((prevMessages) => {
+      const truncatedMessages = prevMessages.slice(0, keepUntilIndex + 1);
+      
+      // 更新会话
+      setConversations((prevConversations) => {
+        const updated = prevConversations.map((conv) => {
+          if (conv.id === currentConversationId) {
+            return {
+              ...conv,
+              messages: truncatedMessages,
+              updatedAt: Date.now(),
+            };
+          }
+          return conv;
+        });
+        saveConversations(updated).catch(error => {
+          console.error('保存会话失败:', error);
+        });
+        return updated;
+      });
+      
+      return truncatedMessages;
+    });
+  };
+
   const loadModels = async () => {
     try {
       const modelList = await modelsAPI.getModels();
@@ -459,6 +546,8 @@ export default function Playground() {
             onGenerateStream={handleGenerateStream}
             loading={loading}
             onMessageSent={handleMessageSent}
+            onEditMessage={handleEditMessage}
+            onTruncateMessages={handleTruncateMessages}
           />
 
           {/* 设置面板 - 桌面端 */}
