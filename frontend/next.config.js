@@ -2,6 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   // 使用 rewrites 将 API 请求代理到后端
+  // 注意：/api/generate/stream 使用自定义 API 路由（app/api/generate/stream/route.ts），
+  // 支持更长的超时时间（5分钟），避免 Gemini API 长时间调用导致的超时问题
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
     return [

@@ -28,3 +28,81 @@ body {
   overflow-x: hidden;
 }
 
+/* Markdown样式 */
+.markdown-content {
+  line-height: 1.6;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+}
+
+.markdown-content p {
+  margin-bottom: 0.75em;
+}
+
+.markdown-content code {
+  font-family: 'Courier New', monospace;
+}
+
+.markdown-content pre {
+  margin: 1em 0;
+  overflow-x: auto;
+}
+
+.markdown-content blockquote {
+  border-left: 4px solid #e5e7eb;
+  padding-left: 1em;
+  margin: 1em 0;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.markdown-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+}
+
+.markdown-content table th,
+.markdown-content table td {
+  border: 1px solid #e5e7eb;
+  padding: 0.5em;
+  text-align: left;
+}
+
+.markdown-content table th {
+  background-color: #f9fafb;
+  font-weight: 600;
+}
+
+/* 代码高亮样式 */
+.markdown-content pre code {
+  display: block;
+  padding: 1em;
+  overflow-x: auto;
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+  border-radius: 0.5rem;
+}
+
+.markdown-content pre code.hljs {
+  background-color: #1e1e1e;
+  color: #d4d4d4;
+}
+
+.markdown-content code:not(pre code) {
+  background-color: #f3f4f6;
+  color: #1f2937;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+}
+

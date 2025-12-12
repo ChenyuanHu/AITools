@@ -456,10 +456,21 @@ app.post('/api/generate', authenticateToken, upload.array('images', 5), async (r
 
 // 流式生成内容
 app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), async (req, res) => {
+  const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  console.log(`[流式生成][${requestId}] ========== 请求开始 ==========`);
+  console.log(`[流式生成][${requestId}] 客户端IP: ${req.ip || req.connection.remoteAddress}`);
+  console.log(`[流式生成][${requestId}] 请求头:`, JSON.stringify({
+    'content-type': req.headers['content-type'],
+    'authorization': req.headers['authorization'] ? '已设置' : '未设置',
+    'content-length': req.headers['content-length']
+  }));
+  
   try {
     if (!genAI) {
+      console.error(`[流式生成][${requestId}] ❌ Google AI API密钥未配置`);
       return res.status(500).json({ error: 'Google AI API密钥未配置' });
     }
+    console.log(`[流式生成][${requestId}] ✅ Google AI 客户端已初始化`);
 
     // 解析历史消息
     let history = [];
@@ -468,36 +479,59 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
         history = typeof req.body.history === 'string' 
           ? JSON.parse(req.body.history) 
           : req.body.history;
+        console.log(`[流式生成][${requestId}] 📝 历史消息解析成功，数量: ${history.length}`);
+      } else {
+        console.log(`[流式生成][${requestId}] 📝 无历史消息`);
       }
     } catch (e) {
-      console.error('[流式生成] 解析历史消息失败:', e);
+      console.error(`[流式生成][${requestId}] ❌ 解析历史消息失败:`, e);
     }
 
-    const { prompt, modelId = 'gemini-3-pro-preview', temperature = 1, systemInstruction } = req.body;
+    const { prompt, modelId = 'gemini-3-pro-preview', temperature = 1, systemInstruction, thinkingBudget, includeThoughts, thinkingLevel } = req.body;
+    console.log(`[流式生成][${requestId}] 📋 请求参数:`, {
+      modelId,
+      temperature,
+      promptLength: prompt?.length || 0,
+      hasSystemInstruction: !!systemInstruction,
+      hasImages: !!(req.files && req.files.length > 0),
+      imageCount: req.files?.length || 0,
+      thinkingBudget: thinkingBudget !== undefined ? thinkingBudget : '未设置',
+      includeThoughts: includeThoughts !== undefined ? includeThoughts : '未设置'
+    });
 
     if (!prompt) {
+      console.error(`[流式生成][${requestId}] ❌ 提示词为空`);
       return res.status(400).json({ error: '提示词不能为空' });
     }
 
     // 映射模型ID到实际的模型名称
     const actualModelName = modelNameMap[modelId] || modelId;
-    console.log(`[流式生成] 使用模型: ${modelId} -> ${actualModelName}, 历史消息数: ${history.length}`);
+    console.log(`[流式生成][${requestId}] 🤖 使用模型: ${modelId} -> ${actualModelName}, 历史消息数: ${history.length}`);
     
     let model;
     try {
+      console.log(`[流式生成][${requestId}] 🔧 开始初始化模型...`);
       model = genAI.getGenerativeModel({ 
         model: actualModelName,
         systemInstruction: systemInstruction || undefined
       });
+      console.log(`[流式生成][${requestId}] ✅ 模型初始化成功: ${actualModelName}`);
     } catch (error) {
-      console.error(`[流式生成] 模型初始化错误:`, error);
+      console.error(`[流式生成][${requestId}] ❌ 模型初始化错误:`, error);
+      console.error(`[流式生成][${requestId}] ❌ 错误堆栈:`, error.stack);
       // 如果模型名称失败，尝试使用原始ID
       if (actualModelName !== modelId) {
-        console.log(`[流式生成] 尝试使用原始模型ID: ${modelId}`);
-        model = genAI.getGenerativeModel({ 
-          model: modelId,
-          systemInstruction: systemInstruction || undefined
-        });
+        console.log(`[流式生成][${requestId}] 🔄 尝试使用原始模型ID: ${modelId}`);
+        try {
+          model = genAI.getGenerativeModel({ 
+            model: modelId,
+            systemInstruction: systemInstruction || undefined
+          });
+          console.log(`[流式生成][${requestId}] ✅ 使用原始模型ID成功: ${modelId}`);
+        } catch (retryError) {
+          console.error(`[流式生成][${requestId}] ❌ 重试失败:`, retryError);
+          throw retryError;
+        }
       } else {
         throw error;
       }
@@ -505,14 +539,17 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
 
     // 构建历史对话内容
     const contents = [];
+    console.log(`[流式生成][${requestId}] 📚 开始构建对话内容...`);
     
     // 转换历史消息为 Google AI API 格式
-    for (const msg of history) {
+    for (let i = 0; i < history.length; i++) {
+      const msg = history[i];
       const parts = [];
       
       // 添加文本内容
       if (msg.content) {
         parts.push({ text: msg.content });
+        console.log(`[流式生成][${requestId}] 📝 历史消息[${i}]: ${msg.role}, 文本长度: ${msg.content.length}`);
       }
       
       // 添加图片内容
@@ -524,6 +561,7 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
               mimeType: img.mimeType
             }
           });
+          console.log(`[流式生成][${requestId}] 🖼️  历史消息[${i}]: 包含图片, MIME: ${img.mimeType}`);
         }
       }
       
@@ -537,18 +575,27 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
 
     // 构建当前请求内容
     const currentParts = [{ text: prompt }];
+    console.log(`[流式生成][${requestId}] 📝 当前提示词长度: ${prompt.length}`);
 
     // 如果有图片，添加图片到parts
     if (req.files && req.files.length > 0) {
-      for (const file of req.files) {
-        const imageData = fs.readFileSync(file.path);
-        const base64Image = imageData.toString('base64');
-        currentParts.push({
-          inlineData: {
-            data: base64Image,
-            mimeType: file.mimetype
-          }
-        });
+      console.log(`[流式生成][${requestId}] 🖼️  开始处理 ${req.files.length} 张图片...`);
+      for (let i = 0; i < req.files.length; i++) {
+        const file = req.files[i];
+        try {
+          console.log(`[流式生成][${requestId}] 🖼️  处理图片[${i}]: ${file.originalname}, 大小: ${file.size} bytes, MIME: ${file.mimetype}`);
+          const imageData = fs.readFileSync(file.path);
+          const base64Image = imageData.toString('base64');
+          currentParts.push({
+            inlineData: {
+              data: base64Image,
+              mimeType: file.mimetype
+            }
+          });
+          console.log(`[流式生成][${requestId}] ✅ 图片[${i}]处理完成, Base64长度: ${base64Image.length}`);
+        } catch (fileError) {
+          console.error(`[流式生成][${requestId}] ❌ 处理图片[${i}]失败:`, fileError);
+        }
       }
     }
 
@@ -557,107 +604,482 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
       role: 'user',
       parts: currentParts
     });
+    console.log(`[流式生成][${requestId}] ✅ 对话内容构建完成, 总消息数: ${contents.length}, 当前消息parts数: ${currentParts.length}`);
 
     // 设置SSE响应头
+    console.log(`[流式生成][${requestId}] 📡 设置SSE响应头...`);
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    console.log(`[流式生成][${requestId}] ✅ SSE响应头已设置`);
+
+    // 标记响应头已设置，用于错误处理
+    let sseHeadersSet = true;
 
     // 检查是否是图片生成模型
     const isImageModel = modelId.includes('image') || modelId === 'gemini-2.5-flash-image';
+    console.log(`[流式生成][${requestId}] 🎨 是否为图片生成模型: ${isImageModel}`);
+    
+    // 准备生成配置
+    const generationConfig = {
+      temperature: parseFloat(temperature),
+      topP: 0.95,
+      maxOutputTokens: 65536,
+      ...(isImageModel && { responseModalities: ['TEXT', 'IMAGE'] }),
+    };
+    
+    // 准备thinking配置（根据Gemini文档）
+    // Gemini 3 Pro使用thinkingLevel ("low" 或 "high")
+    // Gemini 2.5系列使用thinkingBudget
+    // 需要设置includeThoughts: true来输出thinking
+    const isGemini3 = modelId.includes('gemini-3') || modelId.includes('3-pro');
+    const shouldIncludeThoughts = includeThoughts === 'true' || includeThoughts === true || includeThoughts === '1';
+    
+    let thinkingConfig = null;
+    if (shouldIncludeThoughts) {
+      if (isGemini3) {
+        // Gemini 3 Pro使用thinkingLevel
+        const level = thinkingLevel || 'high'; // 默认high
+        thinkingConfig = {
+          thinkingLevel: level,
+          includeThoughts: true
+        };
+        console.log(`[流式生成][${requestId}] 💭 配置thinking (Gemini 3): thinkingLevel=${level}, includeThoughts=true`);
+      } else {
+        // Gemini 2.5系列使用thinkingBudget
+        const budget = thinkingBudget !== undefined ? parseInt(thinkingBudget) : -1; // -1表示动态thinking
+        thinkingConfig = {
+          thinkingBudget: budget,
+          includeThoughts: true
+        };
+        console.log(`[流式生成][${requestId}] 💭 配置thinking (Gemini 2.5): thinkingBudget=${budget}, includeThoughts=true`);
+      }
+    } else {
+      console.log(`[流式生成][${requestId}] ⚡ thinking未启用 (includeThoughts=false或未设置)`);
+    }
+    
+    // 构建请求配置
+    const requestConfig = {
+      generationConfig: generationConfig
+    };
+    
+    // 如果配置了thinking，添加到请求中
+    // 注意：根据文档，thinkingConfig应该在generationConfig中，但实际可能需要不同的位置
+    // 先尝试放在generationConfig中
+    if (thinkingConfig) {
+      requestConfig.generationConfig = {
+        ...generationConfig,
+        thinkingConfig: thinkingConfig
+      };
+    }
+    
+    console.log(`[流式生成][${requestId}] ⚙️  生成配置:`, JSON.stringify(requestConfig.generationConfig));
+    console.log(`[流式生成][${requestId}] 📤 准备调用 Gemini API generateContentStream...`);
+    console.log(`[流式生成][${requestId}] 📤 请求内容摘要:`, {
+      contentsCount: contents.length,
+      lastMessagePartsCount: contents[contents.length - 1]?.parts?.length || 0,
+      hasThinkingConfig: !!thinkingConfig
+    });
+    
+    // ⚠️ 重要：在API调用之前就启动心跳机制，因为generateContentStream调用本身可能会阻塞很长时间
+    // 启动心跳机制：在等待第一个chunk时定期发送心跳，避免连接超时
+    console.log(`[流式生成][${requestId}] 💓 启动心跳机制（每5秒）...`);
+    const heartbeatInterval = setInterval(() => {
+      if (!res.closed && !res.destroyed) {
+        try {
+          const heartbeatTime = Date.now();
+          res.write(`: heartbeat ${heartbeatTime}\n\n`); // SSE注释格式，客户端会忽略，但可以用于调试
+          console.log(`[流式生成][${requestId}] 💓 发送心跳: ${heartbeatTime}`);
+        } catch (e) {
+          // 忽略心跳发送错误
+          console.log(`[流式生成][${requestId}] ⚠️  心跳发送失败:`, e.message);
+        }
+      } else {
+        clearInterval(heartbeatInterval);
+      }
+    }, 5000); // 每5秒发送一次心跳（更频繁，确保连接保持活跃）
+    
+    // 标记是否已收到第一个chunk
+    let firstChunkReceived = false;
     
     // 生成流式内容（包含完整对话历史）
-    const result = await model.generateContentStream({
-      contents: contents,
-      generationConfig: {
-        temperature: parseFloat(temperature),
-        topP: 0.95,
-        maxOutputTokens: 65536,
-        ...(isImageModel && { responseModalities: ['TEXT', 'IMAGE'] }) // 图片生成模型同时支持文本和图片
-      }
-    });
+    const apiCallStartTime = Date.now();
+    let result;
+    try {
+      console.log(`[流式生成][${requestId}] ⏳ 开始调用 Gemini API（可能耗时较长）...`);
+      // 根据文档，thinkingConfig应该在generationConfig中
+      result = await model.generateContentStream({
+        contents: contents,
+        ...requestConfig
+      });
+      const apiCallDuration = Date.now() - apiCallStartTime;
+      console.log(`[流式生成][${requestId}] ✅ Gemini API调用成功, 耗时: ${apiCallDuration}ms`);
+      console.log(`[流式生成][${requestId}] 📥 开始接收流式响应...`);
+    } catch (apiError) {
+      clearInterval(heartbeatInterval); // 确保清理心跳
+      const apiCallDuration = Date.now() - apiCallStartTime;
+      console.error(`[流式生成][${requestId}] ❌ Gemini API调用失败, 耗时: ${apiCallDuration}ms`);
+      console.error(`[流式生成][${requestId}] ❌ API错误详情:`, apiError);
+      console.error(`[流式生成][${requestId}] ❌ API错误堆栈:`, apiError.stack);
+      throw apiError;
+    }
 
     // 收集所有图片数据，在流结束时一次性发送
     const collectedImages = [];
+    let chunkCount = 0;
+    let textChunkCount = 0;
+    let thinkingChunkCount = 0;
+    let imageChunkCount = 0;
+    const streamStartTime = Date.now();
     
-    for await (const chunk of result.stream) {
-      // 检查是否有文本内容
-      try {
-        const chunkText = chunk.text();
-        if (chunkText) {
-          res.write(`data: ${JSON.stringify({ text: chunkText })}\n\n`);
+    try {
+      console.log(`[流式生成][${requestId}] 🔄 开始遍历流式响应...`);
+      for await (const chunk of result.stream) {
+        chunkCount++;
+        
+        // 收到第一个chunk，停止心跳
+        if (!firstChunkReceived) {
+          firstChunkReceived = true;
+          clearInterval(heartbeatInterval);
+          const firstChunkTime = Date.now() - apiCallStartTime;
+          console.log(`[流式生成][${requestId}] 🎉 收到第一个chunk, 等待时间: ${firstChunkTime}ms`);
         }
-      } catch (e) {
-        // text() 可能抛出错误，忽略
-      }
-      
-      // 收集图片数据（不立即发送，避免大数据导致的问题）
-      try {
-        const candidates = chunk.candidates;
-        if (candidates && candidates.length > 0) {
-          const content = candidates[0].content;
-          if (content && content.parts) {
-            for (const part of content.parts) {
-              if (part.inlineData) {
-                console.log('[流式生成] 收集到图片数据，MIME类型:', part.inlineData.mimeType, '数据长度:', part.inlineData.data?.length || 0);
-                collectedImages.push({
-                  data: part.inlineData.data,
-                  mimeType: part.inlineData.mimeType
+        
+        // 检查客户端是否断开连接
+        if (res.closed || res.destroyed) {
+          console.log(`[流式生成][${requestId}] ⚠️  客户端断开连接 (chunk ${chunkCount})`);
+          clearInterval(heartbeatInterval);
+          break;
+        }
+
+        // 详细记录chunk结构（前几个chunk）
+        if (chunkCount <= 3) {
+          console.log(`[流式生成][${requestId}] 🔍 chunk[${chunkCount}] 结构:`, {
+            hasCandidates: !!chunk.candidates,
+            candidatesLength: chunk.candidates?.length || 0,
+            hasPromptFeedback: !!chunk.promptFeedback,
+            chunkKeys: Object.keys(chunk)
+          });
+          if (chunk.candidates && chunk.candidates.length > 0) {
+            const candidate = chunk.candidates[0];
+            console.log(`[流式生成][${requestId}] 🔍 chunk[${chunkCount}] candidate结构:`, {
+              hasContent: !!candidate.content,
+              hasParts: !!(candidate.content?.parts),
+              partsLength: candidate.content?.parts?.length || 0,
+              finishReason: candidate.finishReason,
+              candidateKeys: Object.keys(candidate)
+            });
+            if (candidate.content?.parts) {
+              candidate.content.parts.forEach((part, idx) => {
+                console.log(`[流式生成][${requestId}] 🔍 chunk[${chunkCount}] part[${idx}]:`, {
+                  hasText: !!part.text,
+                  hasThought: !!part.thought,
+                  hasInlineData: !!part.inlineData,
+                  partKeys: Object.keys(part)
                 });
-              }
+              });
             }
           }
         }
-      } catch (e) {
-        console.error('[流式生成] 收集图片数据时出错:', e);
-      }
-    }
-    
-    // 流结束后，一次性发送所有图片
-    if (collectedImages.length > 0) {
-      console.log('[流式生成] 流结束，准备发送', collectedImages.length, '张图片');
-      for (const img of collectedImages) {
+
+        // 检查是否有thinking内容和文本内容
+        // 重要：需要先检查parts，区分thinking和普通文本，避免重复发送
+        let hasThinking = false;
+        let thinkingText = '';
+        let regularText = '';
+        
         try {
-          res.write(`data: ${JSON.stringify({ 
-            image: {
-              data: img.data,
-              mimeType: img.mimeType
+          const candidates = chunk.candidates;
+          if (candidates && candidates.length > 0) {
+            const content = candidates[0].content;
+            if (content && content.parts) {
+              // 遍历所有parts，区分thinking和普通文本
+              for (const part of content.parts) {
+                if (part.thought === true && part.text) {
+                  // 这是thinking内容
+                  hasThinking = true;
+                  thinkingText += part.text;
+                } else if (part.text && part.thought !== true) {
+                  // 这是普通文本内容（明确不是thinking）
+                  regularText += part.text;
+                }
+              }
             }
-          })}\n\n`);
-          console.log('[流式生成] 图片数据已发送，大小:', JSON.stringify({image: img}).length);
+          }
         } catch (e) {
-          console.error('[流式生成] 发送图片数据失败:', e);
+          // 忽略检查错误
+          if (chunkCount <= 5) {
+            console.log(`[流式生成][${requestId}] ⚠️  检查parts时出错 (chunk ${chunkCount}):`, e.message);
+          }
         }
+
+        // 发送thinking内容
+        if (hasThinking && thinkingText) {
+          thinkingChunkCount++;
+          if (thinkingChunkCount <= 3 || thinkingChunkCount % 10 === 0) {
+            console.log(`[流式生成][${requestId}] 💭 收到thinking chunk[${thinkingChunkCount}], 长度: ${thinkingText.length}, 预览: ${thinkingText.substring(0, 50)}...`);
+          }
+          try {
+            res.write(`data: ${JSON.stringify({ thinking: thinkingText })}\n\n`);
+          } catch (writeError) {
+            console.error(`[流式生成][${requestId}] ❌ 写入thinking失败:`, writeError);
+          }
+        }
+
+        // 发送普通文本内容（不包括thinking）
+        if (regularText) {
+          textChunkCount++;
+          if (textChunkCount <= 3 || textChunkCount % 10 === 0) {
+            console.log(`[流式生成][${requestId}] 📝 收到文本chunk[${textChunkCount}], 长度: ${regularText.length}, 内容预览: ${regularText.substring(0, 50)}...`);
+          }
+          try {
+            res.write(`data: ${JSON.stringify({ text: regularText })}\n\n`);
+          } catch (writeError) {
+            console.error(`[流式生成][${requestId}] ❌ 写入文本chunk失败:`, writeError);
+            console.error(`[流式生成][${requestId}] ❌ 写入错误详情:`, {
+              message: writeError.message,
+              code: writeError.code,
+              closed: res.closed,
+              destroyed: res.destroyed
+            });
+            throw writeError;
+          }
+        }
+        
+        // 收集图片数据（不立即发送，避免大数据导致的问题）
+        try {
+          const candidates = chunk.candidates;
+          if (candidates && candidates.length > 0) {
+            const content = candidates[0].content;
+            if (content && content.parts) {
+              for (const part of content.parts) {
+                if (part.inlineData) {
+                  imageChunkCount++;
+                  console.log(`[流式生成][${requestId}] 🖼️  收集到图片数据[${imageChunkCount}], MIME类型: ${part.inlineData.mimeType}, 数据长度: ${part.inlineData.data?.length || 0}`);
+                  collectedImages.push({
+                    data: part.inlineData.data,
+                    mimeType: part.inlineData.mimeType
+                  });
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.error(`[流式生成][${requestId}] ❌ 收集图片数据时出错 (chunk ${chunkCount}):`, e);
+        }
+      }
+      
+      // 确保停止心跳
+      clearInterval(heartbeatInterval);
+      
+      const streamDuration = Date.now() - streamStartTime;
+      console.log(`[流式生成][${requestId}] ✅ 流式响应接收完成`);
+      console.log(`[流式生成][${requestId}] 📊 流处理统计:`, {
+        总chunk数: chunkCount,
+        文本chunk数: textChunkCount,
+        thinkingChunk数: thinkingChunkCount,
+        图片chunk数: imageChunkCount,
+        收集的图片数: collectedImages.length,
+        耗时: `${streamDuration}ms`,
+        第一个chunk等待时间: firstChunkReceived ? `${Date.now() - apiCallStartTime - streamDuration}ms` : '未收到'
+      });
+      
+      // 流结束后，一次性发送所有图片
+      if (collectedImages.length > 0 && !res.closed && !res.destroyed) {
+        console.log(`[流式生成][${requestId}] 🖼️  流结束，准备发送 ${collectedImages.length} 张图片`);
+        for (let i = 0; i < collectedImages.length; i++) {
+          const img = collectedImages[i];
+          try {
+            const imageDataSize = JSON.stringify({image: img}).length;
+            console.log(`[流式生成][${requestId}] 📤 发送图片[${i+1}/${collectedImages.length}], JSON大小: ${imageDataSize} bytes`);
+            res.write(`data: ${JSON.stringify({ 
+              image: {
+                data: img.data,
+                mimeType: img.mimeType
+              }
+            })}\n\n`);
+            console.log(`[流式生成][${requestId}] ✅ 图片[${i+1}]发送成功`);
+          } catch (e) {
+            console.error(`[流式生成][${requestId}] ❌ 发送图片[${i+1}]失败:`, e);
+            console.error(`[流式生成][${requestId}] ❌ 发送错误详情:`, {
+              message: e.message,
+              code: e.code,
+              closed: res.closed,
+              destroyed: res.destroyed
+            });
+          }
+        }
+      }
+
+      // 只有在连接仍然有效时才发送完成信号
+      if (!res.closed && !res.destroyed) {
+        console.log(`[流式生成][${requestId}] 📤 发送完成信号...`);
+        try {
+          res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+          res.end();
+          console.log(`[流式生成][${requestId}] ✅ 响应已结束`);
+        } catch (endError) {
+          console.error(`[流式生成][${requestId}] ❌ 结束响应时出错:`, endError);
+        }
+      } else {
+        console.log(`[流式生成][${requestId}] ⚠️  连接已关闭，跳过发送完成信号`);
+      }
+    } catch (streamError) {
+      // 确保停止心跳
+      clearInterval(heartbeatInterval);
+      
+      console.error(`[流式生成][${requestId}] ❌ 流处理错误:`);
+      console.error(`[流式生成][${requestId}] ❌ 错误类型: ${streamError.constructor.name}`);
+      console.error(`[流式生成][${requestId}] ❌ 错误消息: ${streamError.message}`);
+      console.error(`[流式生成][${requestId}] ❌ 错误堆栈:`, streamError.stack);
+      console.error(`[流式生成][${requestId}] ❌ 错误详情:`, {
+        code: streamError.code,
+        errno: streamError.errno,
+        syscall: streamError.syscall,
+        address: streamError.address,
+        port: streamError.port
+      });
+      console.error(`[流式生成][${requestId}] ❌ 响应状态:`, {
+        headersSent: res.headersSent,
+        closed: res.closed,
+        destroyed: res.destroyed,
+        sseHeadersSet: sseHeadersSet
+      });
+      
+      // 如果响应头已设置，使用 SSE 格式发送错误
+      if (sseHeadersSet && !res.closed && !res.destroyed) {
+        try {
+          console.log(`[流式生成][${requestId}] 📤 尝试发送SSE格式错误消息...`);
+          res.write(`data: ${JSON.stringify({ 
+            error: '生成内容失败',
+            message: streamError.message 
+          })}\n\n`);
+          res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+          res.end();
+          console.log(`[流式生成][${requestId}] ✅ 错误消息已发送`);
+        } catch (e) {
+          console.error(`[流式生成][${requestId}] ❌ 发送错误消息失败:`, e);
+          console.error(`[流式生成][${requestId}] ❌ 发送错误详情:`, {
+            message: e.message,
+            code: e.code,
+            closed: res.closed,
+            destroyed: res.destroyed
+          });
+        }
+      } else {
+        console.log(`[流式生成][${requestId}] ⚠️  SSE响应头未设置或连接已关闭，抛出错误让外层处理`);
+        // 如果响应头未设置，抛出错误让外层 catch 处理
+        throw streamError;
       }
     }
 
-    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-    res.end();
-
     // 清理上传的文件
     if (req.files) {
+      console.log(`[流式生成][${requestId}] 🧹 清理上传的文件...`);
       req.files.forEach(file => {
         if (fs.existsSync(file.path)) {
           fs.unlinkSync(file.path);
+          console.log(`[流式生成][${requestId}] ✅ 已删除文件: ${file.path}`);
         }
       });
     }
+    
+    const totalDuration = Date.now() - parseInt(requestId.split('-')[1]);
+    console.log(`[流式生成][${requestId}] ========== 请求完成，总耗时: ${totalDuration}ms ==========`);
   } catch (error) {
-    console.error('流式生成错误:', error);
+    console.error(`[流式生成][${requestId}] ❌ ========== 请求失败 ==========`);
+    console.error(`[流式生成][${requestId}] ❌ 错误类型: ${error.constructor.name}`);
+    console.error(`[流式生成][${requestId}] ❌ 错误消息: ${error.message}`);
+    console.error(`[流式生成][${requestId}] ❌ 错误堆栈:`, error.stack);
+    console.error(`[流式生成][${requestId}] ❌ 错误详情:`, {
+      code: error.code,
+      errno: error.errno,
+      syscall: error.syscall,
+      address: error.address,
+      port: error.port
+    });
+    console.error(`[流式生成][${requestId}] ❌ 响应状态:`, {
+      headersSent: res.headersSent,
+      closed: res.closed,
+      destroyed: res.destroyed,
+      contentType: res.getHeader('Content-Type')
+    });
     
     // 清理上传的文件
     if (req.files) {
+      console.log(`[流式生成][${requestId}] 🧹 清理上传的文件...`);
       req.files.forEach(file => {
         if (fs.existsSync(file.path)) {
           fs.unlinkSync(file.path);
+          console.log(`[流式生成][${requestId}] ✅ 已删除文件: ${file.path}`);
         }
       });
     }
 
-    res.status(500).json({ 
-      error: '生成内容失败',
-      message: error.message 
-    });
+    // 检查响应头是否已设置（SSE 模式）
+    const isSSE = res.getHeader('Content-Type') === 'text/event-stream';
+    console.log(`[流式生成][${requestId}] 🔍 响应头检查: isSSE=${isSSE}, headersSent=${res.headersSent}`);
+    
+    if (isSSE) {
+      // 如果已经设置了 SSE 响应头，使用 SSE 格式发送错误
+      if (!res.closed && !res.destroyed) {
+        try {
+          console.log(`[流式生成][${requestId}] 📤 发送SSE格式错误消息...`);
+          res.write(`data: ${JSON.stringify({ 
+            error: '生成内容失败',
+            message: error.message 
+          })}\n\n`);
+          res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+          res.end();
+          console.log(`[流式生成][${requestId}] ✅ 错误消息已发送`);
+        } catch (e) {
+          console.error(`[流式生成][${requestId}] ❌ 发送错误消息失败:`, e);
+          console.error(`[流式生成][${requestId}] ❌ 发送错误详情:`, {
+            message: e.message,
+            code: e.code,
+            closed: res.closed,
+            destroyed: res.destroyed
+          });
+          // 如果写入失败，尝试关闭连接
+          if (!res.closed && !res.destroyed) {
+            try {
+              res.end();
+            } catch (endError) {
+              console.error(`[流式生成][${requestId}] ❌ 关闭连接失败:`, endError);
+            }
+          }
+        }
+      } else {
+        console.log(`[流式生成][${requestId}] ⚠️  连接已关闭，无法发送错误消息`);
+      }
+    } else {
+      // 如果还没有设置响应头，可以发送 JSON 响应
+      if (!res.headersSent) {
+        console.log(`[流式生成][${requestId}] 📤 发送JSON格式错误响应...`);
+        try {
+          res.status(500).json({ 
+            error: '生成内容失败',
+            message: error.message 
+          });
+          console.log(`[流式生成][${requestId}] ✅ JSON错误响应已发送`);
+        } catch (jsonError) {
+          console.error(`[流式生成][${requestId}] ❌ 发送JSON响应失败:`, jsonError);
+        }
+      } else {
+        // 如果响应头已发送但格式不对，只能关闭连接
+        console.error(`[流式生成][${requestId}] ⚠️  响应头已发送但格式不对，关闭连接`);
+        if (!res.closed && !res.destroyed) {
+          try {
+            res.end();
+          } catch (endError) {
+            console.error(`[流式生成][${requestId}] ❌ 关闭连接失败:`, endError);
+          }
+        }
+      }
+    }
+    
+    const totalDuration = Date.now() - parseInt(requestId.split('-')[1]);
+    console.log(`[流式生成][${requestId}] ========== 请求结束（失败），总耗时: ${totalDuration}ms ==========`);
   }
 });
 

@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import { Copy, ExternalLink, Send, Image as ImageIcon, X } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import Image from 'next/image';
+import MarkdownRenderer from './MarkdownRenderer';
 
 interface Model {
   id: string;
@@ -17,6 +18,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   images?: Array<{ data: string; mimeType: string }>;
+  thinking?: string; // thinking内容（思考过程）
 }
 
 interface MainContentProps {
@@ -33,7 +35,8 @@ interface MainContentProps {
     history: Message[],
     onChunk: (text: string) => void,
     onImage?: (image: { data: string; mimeType: string }) => void,
-    onComplete?: () => void
+    onComplete?: () => void,
+    onThinking?: (thinking: string) => void // 新增thinking回调
   ) => Promise<void>;
   loading: boolean;
   onMessageSent: (message: Message) => void;
@@ -54,6 +57,7 @@ export default function MainContent({
   const [prompt, setPrompt] = useState('');
   const [images, setImages] = useState<File[]>([]);
   const [currentResponse, setCurrentResponse] = useState('');
+  const [currentThinking, setCurrentThinking] = useState(''); // thinking内容状态
   const [currentImages, setCurrentImages] = useState<Array<{ data: string; mimeType: string }>>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const responseEndRef = useRef<HTMLDivElement>(null);
@@ -114,11 +118,13 @@ export default function MainContent({
     setPrompt('');
     setImages([]);
     setCurrentResponse('');
+    setCurrentThinking(''); // 清空thinking
     setCurrentImages([]);
     setIsStreaming(true);
 
     try {
       let fullResponse = '';
+      let fullThinking = ''; // 累积所有thinking内容
       const responseImages: Array<{ data: string; mimeType: string }> = [];
       
       await onGenerateStream(
@@ -151,18 +157,39 @@ export default function MainContent({
         () => {
           setIsStreaming(false);
           // 保存助手回复
-          if (fullResponse || responseImages.length > 0) {
-            onMessageSent({
-              role: 'assistant',
-              content: fullResponse,
+          // 注意：即使只有thinking内容，也应该保存（可能没有正文内容）
+          // 使用累积的fullThinking，而不是currentThinking状态（因为状态更新可能有延迟）
+          if (fullResponse || responseImages.length > 0 || fullThinking) {
+            const messageToSave = {
+              role: 'assistant' as const,
+              content: fullResponse || '', // 确保content不为undefined
               images: responseImages.length > 0 ? responseImages : undefined,
+              thinking: fullThinking && fullThinking.trim() ? fullThinking : undefined, // 保存thinking内容（只保存非空的）
+            };
+            console.log('[MainContent] 保存消息:', {
+              hasContent: !!messageToSave.content,
+              contentLength: messageToSave.content.length,
+              hasThinking: !!messageToSave.thinking,
+              thinkingLength: messageToSave.thinking?.length || 0,
+              thinkingPreview: messageToSave.thinking?.substring(0, 100),
             });
+            onMessageSent(messageToSave);
           }
           // 延迟清空，确保消息已保存
           setTimeout(() => {
             setCurrentResponse('');
+            setCurrentThinking('');
             setCurrentImages([]);
           }, 100);
+        },
+        // onThinking回调
+        (thinking: string) => {
+          fullThinking += thinking; // 累积到局部变量
+          setCurrentThinking((prev) => prev + thinking); // 同时更新状态用于显示
+          // 自动滚动到底部
+          setTimeout(() => {
+            responseEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+          }, 0);
         }
       );
     } catch (error: any) {
@@ -259,10 +286,24 @@ export default function MainContent({
                     : 'bg-gray-100 text-gray-900'
                 }`}
               >
+                {/* 显示thinking内容 - 使用更明显的样式区分 */}
+                {message.thinking && message.thinking.trim() && (
+                  <div className="mb-4 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 border-l-4 border-purple-400 rounded-r-lg shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-purple-600 font-bold text-sm">💭</span>
+                      <span className="text-purple-700 font-semibold text-sm">思考过程</span>
+                    </div>
+                    {/* 使用Markdown渲染thinking内容 */}
+                    <div className="text-purple-800 text-xs md:text-sm leading-relaxed break-words bg-white/50 p-2 rounded border border-purple-200">
+                      <MarkdownRenderer content={message.thinking} />
+                    </div>
+                  </div>
+                )}
+                {/* 使用Markdown渲染正文内容 */}
                 {message.content && (
-                  <pre className="whitespace-pre-wrap text-xs md:text-sm font-sans mb-2 break-words">
-                    {message.content}
-                  </pre>
+                  <div className="text-xs md:text-sm text-gray-900 prose prose-sm max-w-none">
+                    <MarkdownRenderer content={message.content} />
+                  </div>
                 )}
                 {message.images && message.images.length > 0 && (
                   <div className="space-y-2 mt-2">
@@ -287,16 +328,30 @@ export default function MainContent({
           ))}
           
           {/* 当前正在生成的回复 */}
-          {(currentResponse || currentImages.length > 0) && (
+          {(currentResponse || currentThinking || currentImages.length > 0) && (
             <div className="flex gap-2 md:gap-4 justify-start">
               <div className="w-7 h-7 md:w-8 md:h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs md:text-sm font-medium flex-shrink-0">
                 AI
               </div>
               <div className="max-w-[85%] md:max-w-[80%] rounded-lg p-3 md:p-4 bg-gray-100 text-gray-900">
-                {currentResponse && (
-                  <pre className="whitespace-pre-wrap text-xs md:text-sm font-sans mb-2 break-words">
-                    {currentResponse}
-                  </pre>
+                {/* 显示thinking内容 - 使用更明显的样式区分，确保始终显示在正文之前 */}
+                {currentThinking && currentThinking.trim() && (
+                  <div className="mb-4 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 border-l-4 border-purple-400 rounded-r-lg shadow-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-purple-600 font-bold text-sm">💭</span>
+                      <span className="text-purple-700 font-semibold text-sm">思考过程</span>
+                    </div>
+                    {/* 使用Markdown渲染thinking内容 */}
+                    <div className="text-purple-800 text-xs md:text-sm leading-relaxed break-words bg-white/50 p-2 rounded border border-purple-200">
+                      <MarkdownRenderer content={currentThinking} />
+                    </div>
+                  </div>
+                )}
+                {/* 使用Markdown渲染正文内容 - 只在有content时显示 */}
+                {currentResponse && currentResponse.trim() && (
+                  <div className="text-xs md:text-sm text-gray-900 prose prose-sm max-w-none">
+                    <MarkdownRenderer content={currentResponse} />
+                  </div>
                 )}
                 {currentImages.length > 0 && (
                   <div className="space-y-2 mt-2">

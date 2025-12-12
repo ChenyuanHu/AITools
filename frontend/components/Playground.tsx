@@ -24,6 +24,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   images?: Array<{ data: string; mimeType: string }>;
+  thinking?: string; // thinking内容（思考过程）
 }
 
 export default function Playground() {
@@ -43,6 +44,8 @@ export default function Playground() {
   // 设置状态
   const [temperature, setTemperature] = useState(1);
   const [systemInstruction, setSystemInstruction] = useState('');
+  const [includeThoughts, setIncludeThoughts] = useState(true); // 默认启用thinking
+  const [thinkingLevel, setThinkingLevel] = useState('low'); // 默认low级别
 
   useEffect(() => {
     // 加载用户信息
@@ -176,7 +179,8 @@ export default function Playground() {
     history: Message[],
     onChunk: (text: string) => void,
     onImage?: (image: { data: string; mimeType: string }) => void,
-    onComplete?: () => void
+    onComplete?: () => void,
+    onThinking?: (thinking: string) => void // 新增thinking回调
   ) => {
     if (!selectedModel) return;
 
@@ -189,6 +193,8 @@ export default function Playground() {
         systemInstruction: systemInstruction || undefined,
         images: images.length > 0 ? images : undefined,
         history: history, // 传递历史消息
+        includeThoughts: includeThoughts, // 使用配置的thinking设置
+        thinkingLevel: thinkingLevel, // 使用配置的thinking级别
       });
 
       const reader = response.body?.getReader();
@@ -232,6 +238,14 @@ export default function Playground() {
                 setLoading(false);
                 return;
               }
+              // 处理thinking数据（思考过程）
+              if (data.thinking) {
+                console.log('[前端] 收到thinking数据:', data.thinking.substring(0, 100));
+                // 调用thinking回调
+                if (onThinking) {
+                  onThinking(data.thinking);
+                }
+              }
               if (data.text) {
                 onChunk(data.text);
               }
@@ -267,6 +281,10 @@ export default function Playground() {
                 if (onComplete) onComplete();
                 setLoading(false);
                 return;
+              }
+              // 处理thinking数据（思考过程）
+              if (data.thinking) {
+                console.log('[前端] 收到thinking数据（拼接后）:', data.thinking.substring(0, 100));
               }
               if (data.text) {
                 onChunk(data.text);
@@ -403,8 +421,12 @@ export default function Playground() {
                 model={selectedModel}
                 temperature={temperature}
                 systemInstruction={systemInstruction}
+                includeThoughts={includeThoughts}
+                thinkingLevel={thinkingLevel}
                 onTemperatureChange={setTemperature}
                 onSystemInstructionChange={setSystemInstruction}
+                onIncludeThoughtsChange={setIncludeThoughts}
+                onThinkingLevelChange={setThinkingLevel}
                 onClose={() => setShowSettings(false)}
               />
             </div>
@@ -417,8 +439,12 @@ export default function Playground() {
                 model={selectedModel}
                 temperature={temperature}
                 systemInstruction={systemInstruction}
+                includeThoughts={includeThoughts}
+                thinkingLevel={thinkingLevel}
                 onTemperatureChange={setTemperature}
                 onSystemInstructionChange={setSystemInstruction}
+                onIncludeThoughtsChange={setIncludeThoughts}
+                onThinkingLevelChange={setThinkingLevel}
                 onClose={() => setShowSettings(false)}
               />
             </div>

@@ -103,12 +103,26 @@ export const generateAPI = {
       content: string;
       images?: Array<{ data: string; mimeType: string }>;
     }>;
+    includeThoughts?: boolean; // 是否包含thinking过程
+    thinkingLevel?: string; // Gemini 3 Pro的thinking级别: "low" 或 "high"
+    thinkingBudget?: number; // Gemini 2.5系列的thinking预算
   }) => {
     const formData = new FormData();
     formData.append('prompt', data.prompt);
     if (data.modelId) formData.append('modelId', data.modelId);
     if (data.temperature !== undefined) formData.append('temperature', data.temperature.toString());
     if (data.systemInstruction) formData.append('systemInstruction', data.systemInstruction);
+    
+    // 添加thinking相关参数
+    if (data.includeThoughts !== undefined) {
+      formData.append('includeThoughts', data.includeThoughts.toString());
+    }
+    if (data.thinkingLevel) {
+      formData.append('thinkingLevel', data.thinkingLevel);
+    }
+    if (data.thinkingBudget !== undefined) {
+      formData.append('thinkingBudget', data.thinkingBudget.toString());
+    }
     
     if (data.history && data.history.length > 0) {
       formData.append('history', JSON.stringify(data.history));
