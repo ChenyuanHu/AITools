@@ -801,7 +801,7 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
     }
 
     // 收集所有图片数据，在流结束时一次性发送
-    const collectedImages = [];
+    let collectedImages = [];
     let chunkCount = 0;
     let textChunkCount = 0;
     let thinkingChunkCount = 0;
