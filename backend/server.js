@@ -245,7 +245,7 @@ app.get('/api/models', authenticateToken, (req, res) => {
     },
     {
       id: 'gemini-3-pro-image-preview',
-      name: 'Gemini 3 Pro Image Preview',
+      name: '【图像】Gemini 3 Pro Image Preview',
       description: '我们最智能的模型，具有SOTA推理和多模态理解能力，以及强大的代理和编码能力',
       type: 'gemini',
       isNew: true
@@ -259,7 +259,7 @@ app.get('/api/models', authenticateToken, (req, res) => {
     },
     {
       id: 'gemini-2.5-flash-image',
-      name: 'Gemini 2.5 Flash Image',
+      name: '【图像】Gemini 2.5 Flash Image',
       description: '快速且高效的多模态模型',
       type: 'gemini',
       isNew: false
