@@ -63,25 +63,35 @@ export default function Playground() {
     loadModels();
 
     // 加载会话列表
-    const loadedConversations = loadConversations();
-    setConversations(loadedConversations);
+    const loadData = async () => {
+      try {
+        const loadedConversations = await loadConversations();
+        setConversations(loadedConversations);
 
-    // 如果有会话，选择最新的一个
-    if (loadedConversations.length > 0) {
-      const latest = loadedConversations.sort((a, b) => b.updatedAt - a.updatedAt)[0];
-      setCurrentConversationId(latest.id);
-      setMessages(latest.messages);
-    } else {
-      // 创建新会话
-      handleNewConversation();
-    }
+        // 如果有会话，选择最新的一个
+        if (loadedConversations.length > 0) {
+          const latest = loadedConversations.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+          setCurrentConversationId(latest.id);
+          setMessages(latest.messages);
+        } else {
+          // 创建新会话
+          handleNewConversation();
+        }
+      } catch (error) {
+        console.error('加载会话失败:', error);
+      }
+    };
+    
+    loadData();
   }, []);
 
-  const handleNewConversation = () => {
+  const handleNewConversation = async () => {
     const newConversation = createConversation('新会话');
     setConversations((prev) => {
       const updated = [newConversation, ...prev];
-      saveConversations(updated);
+      saveConversations(updated).catch(error => {
+        console.error('保存会话失败:', error);
+      });
       return updated;
     });
     setCurrentConversationId(newConversation.id);
@@ -99,10 +109,14 @@ export default function Playground() {
     });
   };
 
-  const handleDeleteConversation = (id: string) => {
+  const handleDeleteConversation = async (id: string) => {
     const updated = conversations.filter((c) => c.id !== id);
     setConversations(updated);
-    saveConversations(updated);
+    try {
+      await saveConversations(updated);
+    } catch (error) {
+      console.error('保存会话失败:', error);
+    }
     
     if (currentConversationId === id) {
       if (updated.length > 0) {
@@ -137,7 +151,9 @@ export default function Playground() {
           }
           return conv;
         });
-        saveConversations(updated);
+        saveConversations(updated).catch(error => {
+          console.error('保存会话失败:', error);
+        });
         return updated;
       });
       

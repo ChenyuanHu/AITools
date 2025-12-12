@@ -33,133 +33,47 @@ interface SidebarProps {
   onClose?: () => void; // 移动端关闭回调
 }
 
-const STORAGE_KEY = 'ai_conversations';
-const MAX_CONVERSATIONS = 50; // 最多保留50个会话
-const MAX_STORAGE_SIZE = 4 * 1024 * 1024; // 4MB 限制（留出安全余量）
+// 使用 IndexedDB 存储会话数据
+import { 
+  loadConversations as loadFromIndexedDB, 
+  saveConversations as saveToIndexedDB,
+  removeConversation as removeFromIndexedDB,
+  migrateFromLocalStorage
+} from '@/lib/indexedDB';
 
-// 计算数据大小（字节）
-function getStorageSize(data: string): number {
-  return new Blob([data]).size;
-}
-
-// 清理旧会话，保留最新的
-function trimConversations(conversations: Conversation[]): Conversation[] {
-  // 按更新时间排序，保留最新的
-  const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
-  return sorted.slice(0, MAX_CONVERSATIONS);
-}
-
-// 移除图片数据以减小存储大小（仅在必要时使用）
-function compressConversation(conversation: Conversation, removeImages: boolean = false): Conversation {
-  if (!removeImages) {
-    return conversation;
-  }
-  
-  return {
-    ...conversation,
-    messages: conversation.messages.map(msg => ({
-      ...msg,
-      // 移除图片数据，只保留图片数量信息
-      images: msg.images ? msg.images.map((img, index) => ({
-        mimeType: img.mimeType,
-        // 不存储图片数据，只存储占位符
-        data: `[图片${index + 1}数据已移除]`
-      })) : undefined
-    }))
-  };
-}
-
-export function loadConversations(): Conversation[] {
+// 导出函数，使用 IndexedDB
+export async function loadConversations(): Promise<Conversation[]> {
   if (typeof window === 'undefined') return [];
+  
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    return stored ? JSON.parse(stored) : [];
+    // 首次加载时迁移 localStorage 数据
+    await migrateFromLocalStorage();
+    return await loadFromIndexedDB();
   } catch (error) {
     console.error('加载会话失败:', error);
     return [];
   }
 }
 
-export function saveConversations(conversations: Conversation[]) {
+export async function saveConversations(conversations: Conversation[]): Promise<void> {
   if (typeof window === 'undefined') return;
   
   try {
-    // 先清理旧会话
-    let trimmedConversations = trimConversations(conversations);
-    
-    // 尝试保存
-    const dataString = JSON.stringify(trimmedConversations);
-    const dataSize = getStorageSize(dataString);
-    
-    // 如果数据太大，先尝试减少会话数量（保留图片数据）
-    if (dataSize > MAX_STORAGE_SIZE) {
-      console.warn('会话数据过大，减少会话数量...');
-      trimmedConversations = trimmedConversations.slice(0, Math.floor(MAX_CONVERSATIONS * 0.7));
-      const reducedString = JSON.stringify(trimmedConversations);
-      const reducedSize = getStorageSize(reducedString);
-      
-      // 如果减少会话数量后还是太大，再尝试压缩图片数据
-      if (reducedSize > MAX_STORAGE_SIZE) {
-        console.warn('减少会话数量后数据仍然过大，压缩图片数据...');
-        trimmedConversations = trimmedConversations.map(conv => compressConversation(conv, true));
-      }
-    }
-    
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmedConversations));
-    
-    // 如果删除了会话，提示用户
-    if (trimmedConversations.length < conversations.length) {
-      console.warn(`已自动清理 ${conversations.length - trimmedConversations.length} 个旧会话以节省存储空间`);
-    }
-  } catch (error: any) {
-    if (error.name === 'QuotaExceededError' || error.code === 22) {
-      console.error('存储空间不足，尝试清理旧数据...');
-      
-      // 尝试清理更多旧会话（先不压缩图片）
-      try {
-        let trimmedConversations = trimConversations(conversations);
-        // 只保留最新的 30 个会话（保留图片数据）
-        trimmedConversations = trimmedConversations.slice(0, 30);
-        
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmedConversations));
-        console.warn('已清理部分旧会话以释放存储空间');
-      } catch (retryError) {
-        console.error('无法保存会话数据，尝试压缩图片数据...', retryError);
-        // 第二次尝试：减少会话数量并压缩图片数据
-        try {
-          let trimmedConversations = trimConversations(conversations);
-          // 只保留最新的 20 个会话
-          trimmedConversations = trimmedConversations.slice(0, 20);
-          // 压缩图片数据
-          trimmedConversations = trimmedConversations.map(conv => compressConversation(conv, true));
-          
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmedConversations));
-          console.warn('已清理部分旧会话并压缩图片数据');
-        } catch (secondRetryError) {
-          console.error('仍然无法保存，尝试只保留少量会话:', secondRetryError);
-          // 最后的尝试：只保留最新的 10 个会话（压缩图片）
-          try {
-            const lastConversations = conversations
-              .sort((a, b) => b.updatedAt - a.updatedAt)
-              .slice(0, 10)
-              .map(conv => compressConversation(conv, true));
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(lastConversations));
-            console.warn('已清理大部分会话，仅保留最新的 10 个会话（图片数据已压缩）');
-          } catch (finalError) {
-            console.error('存储空间严重不足，无法保存会话数据:', finalError);
-            // 最后的最后：清空所有数据并重新开始
-            try {
-              localStorage.removeItem(STORAGE_KEY);
-              console.warn('已清空所有会话数据，请重新开始');
-            } catch (clearError) {
-              console.error('无法清空存储，可能需要用户手动清理浏览器缓存');
-            }
-          }
-        }
-      }
-    } else {
-      console.error('保存会话失败:', error);
-    }
+    await saveToIndexedDB(conversations);
+  } catch (error) {
+    console.error('保存会话失败:', error);
+    throw error;
+  }
+}
+
+export async function removeConversation(id: string): Promise<void> {
+  if (typeof window === 'undefined') return;
+  
+  try {
+    await removeFromIndexedDB(id);
+  } catch (error) {
+    console.error('删除会话失败:', error);
+    throw error;
   }
 }
 
