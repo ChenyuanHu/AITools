@@ -24,9 +24,13 @@ export async function POST(request: NextRequest) {
     // 复制所有字段到新的FormData
     for (const [key, value] of formData.entries()) {
       fieldCount++;
-      if (value instanceof File) {
-        backendFormData.append(key, value);
-        console.log(`[Next.js代理][${requestId}] 字段[${fieldCount}]: ${key} (File, ${value.size} bytes)`);
+      // 检查是否为 File 对象：在 Node.js 环境中，File 可能不是全局的
+      // 使用类型检查：File 对象有 size 和 type 属性，而字符串没有
+      const isFile = value && typeof value === 'object' && 'size' in value && 'type' in value;
+      if (isFile) {
+        backendFormData.append(key, value as File);
+        const fileValue = value as File;
+        console.log(`[Next.js代理][${requestId}] 字段[${fieldCount}]: ${key} (File, ${fileValue.size} bytes)`);
       } else {
         backendFormData.append(key, value as string);
         const strValue = value as string;
