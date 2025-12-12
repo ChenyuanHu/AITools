@@ -20,10 +20,15 @@ cd backend
 pm2 start server.js --name ai-tools-backend
 cd ..
 
-# 构建前端（如果还没有构建）
-if [ ! -d "./frontend/.next" ]; then
+# 构建前端（如果还没有构建或需要重新构建）
+if [ ! -d "./frontend/.next" ] || [ ! -f "./frontend/.next/BUILD_ID" ]; then
     echo "📦 构建前端应用..."
     cd frontend
+    # 确保依赖已安装
+    if [ ! -d "./node_modules" ]; then
+        echo "📦 安装前端依赖..."
+        npm install
+    fi
     if ! npm run build; then
         echo "❌ 前端构建失败，请检查错误信息"
         exit 1
