@@ -17,7 +17,7 @@ interface Model {
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  images?: Array<{ data: string; mimeType: string }>;
+  images?: Array<{ data: string; mimeType: string; thoughtSignature?: string }>;
   thinking?: string; // thinking内容（思考过程）
 }
 
@@ -62,11 +62,31 @@ export default function MainContent({
   const [images, setImages] = useState<File[]>([]);
   const [currentResponse, setCurrentResponse] = useState('');
   const [currentThinking, setCurrentThinking] = useState(''); // thinking内容状态
-  const [currentImages, setCurrentImages] = useState<Array<{ data: string; mimeType: string }>>([]);
+  const [currentImages, setCurrentImages] = useState<Array<{ data: string; mimeType: string; thoughtSignature?: string }>>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null); // 正在编辑的消息索引
   const [editingContent, setEditingContent] = useState(''); // 编辑中的内容
   const [editingImages, setEditingImages] = useState<File[]>([]); // 编辑中的图片
+
+  // 将 base64 图片转换为 File 对象
+  const base64ToFile = async (base64Data: string, mimeType: string, filename: string = 'image'): Promise<File> => {
+    // 确保 base64 数据格式正确
+    const base64 = base64Data.startsWith('data:') 
+      ? base64Data.split(',')[1] 
+      : base64Data;
+    
+    // 将 base64 转换为 Blob
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: mimeType });
+    
+    // 从 Blob 创建 File 对象
+    return new File([blob], filename, { type: mimeType });
+  };
   const responseEndRef = useRef<HTMLDivElement>(null);
 
   const filteredModels = models.filter((model) => {
@@ -132,7 +152,7 @@ export default function MainContent({
     try {
       let fullResponse = '';
       let fullThinking = ''; // 累积所有thinking内容
-      const responseImages: Array<{ data: string; mimeType: string }> = [];
+      const responseImages: Array<{ data: string; mimeType: string; thoughtSignature?: string }> = [];
       
       await onGenerateStream(
         userPrompt,
@@ -310,10 +330,27 @@ export default function MainContent({
                 {/* 用户消息的编辑按钮 */}
                 {message.role === 'user' && !isEditing && (
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       setEditingIndex(index);
                       setEditingContent(message.content);
-                      setEditingImages([]);
+                      
+                      // 将原始消息中的 base64 图片转换为 File 对象
+                      if (message.images && message.images.length > 0) {
+                        const filePromises = message.images.map((img, imgIndex) => {
+                          const imageData = img.data.startsWith('data:') 
+                            ? img.data.split(',')[1] 
+                            : img.data;
+                          return base64ToFile(
+                            imageData, 
+                            img.mimeType, 
+                            `image-${imgIndex + 1}.${img.mimeType.split('/')[1] || 'png'}`
+                          );
+                        });
+                        const files = await Promise.all(filePromises);
+                        setEditingImages(files);
+                      } else {
+                        setEditingImages([]);
+                      }
                     }}
                     className="absolute -left-8 md:-left-10 top-2 p-1 text-gray-400 hover:text-blue-600 bg-white rounded shadow-sm transition-colors"
                     title="编辑消息"
@@ -416,7 +453,7 @@ export default function MainContent({
                           try {
                             let fullResponse = '';
                             let fullThinking = '';
-                            const responseImages: Array<{ data: string; mimeType: string }> = [];
+                            const responseImages: Array<{ data: string; mimeType: string; thoughtSignature?: string }> = [];
                             
                             // 获取截断后的历史消息
                             const truncatedMessages = messages.slice(0, index);

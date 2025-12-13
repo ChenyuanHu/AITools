@@ -91,7 +91,11 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { 
+    fileSize: 10 * 1024 * 1024, // 10MB 文件大小限制
+    fieldSize: 200 * 1024 * 1024, // 200MB 字段大小限制（用于历史记录中的base64图片数据，支持多轮对话）
+    fields: 50, // 最多50个字段
+  },
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -583,13 +587,22 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
       // 添加图片内容
       if (msg.images && msg.images.length > 0) {
         for (const img of msg.images) {
-          parts.push({
+          const imagePart = {
             inlineData: {
               data: img.data,
               mimeType: img.mimeType
             }
-          });
-          console.log(`[流式生成][${requestId}] 🖼️  历史消息[${i}]: 包含图片, MIME: ${img.mimeType}`);
+          };
+          
+          // 如果有 thought_signature，必须包含（多轮图片修改需要）
+          if (img.thoughtSignature) {
+            imagePart.thoughtSignature = img.thoughtSignature;
+            console.log(`[流式生成][${requestId}] 🖼️  历史消息[${i}]: 包含图片, MIME: ${img.mimeType}, 有 thought_signature`);
+          } else {
+            console.log(`[流式生成][${requestId}] 🖼️  历史消息[${i}]: 包含图片, MIME: ${img.mimeType}, 无 thought_signature`);
+          }
+          
+          parts.push(imagePart);
         }
       }
       
@@ -936,6 +949,20 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
             if (content && content.parts) {
               for (const part of content.parts) {
                 if (part.inlineData) {
+                  // 提取 thought_signature（如果存在）
+                  // 注意：SDK 可能使用 thoughtSignature（驼峰）或 thought_signature（下划线）
+                  const thoughtSignature = part.thoughtSignature || part.thought_signature;
+                  
+                  // 调试：打印 part 的所有键，查看实际字段名
+                  if (chunkCount <= 3 && !part.thought) {
+                    console.log(`[流式生成][${requestId}] 🔍 part 所有键:`, Object.keys(part));
+                    console.log(`[流式生成][${requestId}] 🔍 thoughtSignature 字段:`, {
+                      thoughtSignature: part.thoughtSignature,
+                      thought_signature: part.thought_signature,
+                      hasSignature: !!(part.thoughtSignature || part.thought_signature)
+                    });
+                  }
+                  
                   if (part.thought === true) {
                     // 这是thinking过程中的图片（临时图片）
                     // 根据文档：The last image within Thinking is also the final rendered image.
@@ -947,18 +974,26 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
                     collectedImages.push({
                       data: part.inlineData.data,
                       mimeType: part.inlineData.mimeType,
-                      isThinkingImage: true // 标记为thinking图片
+                      isThinkingImage: true, // 标记为thinking图片
+                      thoughtSignature: thoughtSignature // 保存 thought_signature（thinking图片通常没有）
                     });
                   } else {
                     // 这是非thinking的图片（最终图片）
                     imageChunkCount++;
-                    console.log(`[流式生成][${requestId}] 🖼️  收集到最终图片[${imageChunkCount}], MIME类型: ${part.inlineData.mimeType}, 数据长度: ${part.inlineData.data?.length || 0}`);
+                    console.log(`[流式生成][${requestId}] 🖼️  收集到最终图片[${imageChunkCount}], MIME类型: ${part.inlineData.mimeType}, 数据长度: ${part.inlineData.data?.length || 0}, thoughtSignature: ${thoughtSignature ? '有' : '无'}`);
                     collectedImages.push({
                       data: part.inlineData.data,
                       mimeType: part.inlineData.mimeType,
-                      isThinkingImage: false
+                      isThinkingImage: false,
+                      thoughtSignature: thoughtSignature // 保存 thought_signature（最终图片必须有）
                     });
                   }
+                }
+                
+                // 检查文本部分是否有 thought_signature（第一个非thinking文本部分应该有）
+                if (part.text && !part.thought && part.thoughtSignature) {
+                  console.log(`[流式生成][${requestId}] 📝 文本部分包含 thought_signature`);
+                  // 保存第一个文本的 thought_signature（如果需要的话）
                 }
               }
             }
@@ -1001,7 +1036,8 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
             res.write(`data: ${JSON.stringify({ 
               image: {
                 data: img.data,
-                mimeType: img.mimeType
+                mimeType: img.mimeType,
+                thoughtSignature: img.thoughtSignature // 传递 thought_signature
               }
             })}\n\n`);
             console.log(`[流式生成][${requestId}] ✅ 图片[${i+1}]发送成功`);

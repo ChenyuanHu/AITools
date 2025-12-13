@@ -23,7 +23,7 @@ interface User {
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  images?: Array<{ data: string; mimeType: string }>;
+  images?: Array<{ data: string; mimeType: string; thoughtSignature?: string }>;
   thinking?: string; // thinking内容（思考过程）
 }
 
@@ -166,7 +166,7 @@ export default function Playground() {
     if (!currentConversationId) return;
     
     // 转换图片（如果有）
-    let imageData: Array<{ data: string; mimeType: string }> | undefined;
+    let imageData: Array<{ data: string; mimeType: string; thoughtSignature?: string }> | undefined;
     if (newImages && newImages.length > 0) {
       imageData = await Promise.all(
         newImages.map((file) => {

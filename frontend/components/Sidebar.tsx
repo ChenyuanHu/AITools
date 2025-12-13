@@ -12,7 +12,7 @@ interface User {
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  images?: Array<{ data: string; mimeType: string }>;
+    images?: Array<{ data: string; mimeType: string; thoughtSignature?: string }>;
 }
 
 export interface Conversation {

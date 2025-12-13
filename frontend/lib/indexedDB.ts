@@ -12,7 +12,7 @@ interface Conversation {
   messages: Array<{
     role: 'user' | 'assistant';
     content: string;
-    images?: Array<{ data: string; mimeType: string }>;
+    images?: Array<{ data: string; mimeType: string; thoughtSignature?: string }>;
     thinking?: string;
   }>;
 }
