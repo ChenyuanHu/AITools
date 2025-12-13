@@ -795,6 +795,7 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
     // 生成流式内容（包含完整对话历史）
     const apiCallStartTime = Date.now();
     let result;
+    let streamResponse; // 保存流式响应对象，用于后续提取完整响应
     try {
       console.log(`[流式生成][${requestId}] ⏳ 开始调用 Gemini API（可能耗时较长）...`);
       // 根据文档，thinkingConfig应该在generationConfig中
@@ -802,6 +803,7 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
         contents: contents,
         ...requestConfig
       });
+      streamResponse = result.response; // 保存响应对象
       const apiCallDuration = Date.now() - apiCallStartTime;
       console.log(`[流式生成][${requestId}] ✅ Gemini API调用成功, 耗时: ${apiCallDuration}ms`);
       console.log(`[流式生成][${requestId}] 📥 开始接收流式响应...`);
@@ -1006,6 +1008,49 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
       // 确保停止心跳
       clearInterval(heartbeatInterval);
       
+      // 尝试从 streamResponse 获取完整响应，提取 thought_signature
+      // 根据文档，thought_signature 在完整响应中，不在流式chunk中
+      try {
+        if (streamResponse) {
+          console.log(`[流式生成][${requestId}] 🔍 尝试从完整响应中提取 thought_signature...`);
+          // streamResponse 可能是一个 Promise，需要 await
+          const fullResponse = streamResponse instanceof Promise ? await streamResponse : streamResponse;
+          console.log(`[流式生成][${requestId}] 🔍 完整响应类型:`, typeof fullResponse, 'keys:', fullResponse ? Object.keys(fullResponse) : 'null');
+          
+          if (fullResponse && fullResponse.candidates && fullResponse.candidates.length > 0) {
+            const candidate = fullResponse.candidates[0];
+            if (candidate.content && candidate.content.parts) {
+              console.log(`[流式生成][${requestId}] 🔍 完整响应包含 ${candidate.content.parts.length} 个 parts`);
+              // 遍历所有parts，查找图片的 thought_signature
+              for (let i = 0; i < candidate.content.parts.length; i++) {
+                const part = candidate.content.parts[i];
+                console.log(`[流式生成][${requestId}] 🔍 part[${i}] keys:`, Object.keys(part));
+                if (part.inlineData && !part.thought) {
+                  const thoughtSignature = part.thoughtSignature || part.thought_signature;
+                  console.log(`[流式生成][${requestId}] 🔍 part[${i}] thoughtSignature:`, thoughtSignature ? '有' : '无');
+                  if (thoughtSignature) {
+                    console.log(`[流式生成][${requestId}] ✅ 从完整响应中找到 thought_signature (part ${i})`);
+                    // 更新对应的图片数据（通过数据长度匹配，因为base64数据可能不完全相同）
+                    // 优先更新没有 thoughtSignature 的最终图片
+                    const finalImagesWithoutSignature = collectedImages.filter(img => 
+                      !img.isThinkingImage && !img.thoughtSignature
+                    );
+                    if (finalImagesWithoutSignature.length > 0) {
+                      finalImagesWithoutSignature[0].thoughtSignature = thoughtSignature;
+                      console.log(`[流式生成][${requestId}] ✅ 已更新图片的 thought_signature`);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } else {
+          console.log(`[流式生成][${requestId}] ⚠️  streamResponse 不存在`);
+        }
+      } catch (e) {
+        console.log(`[流式生成][${requestId}] ⚠️  无法从完整响应中提取 thought_signature:`, e.message, e.stack);
+      }
+      
       const streamDuration = Date.now() - streamStartTime;
       console.log(`[流式生成][${requestId}] ✅ 流式响应接收完成`);
       console.log(`[流式生成][${requestId}] 📊 流处理统计:`, {
@@ -1016,6 +1061,11 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
         收集的图片数: collectedImages.length,
         耗时: `${streamDuration}ms`,
         第一个chunk等待时间: firstChunkReceived ? `${Date.now() - apiCallStartTime - streamDuration}ms` : '未收到'
+      });
+      
+      // 打印收集到的图片的 thought_signature 状态
+      collectedImages.forEach((img, idx) => {
+        console.log(`[流式生成][${requestId}] 🖼️  图片[${idx}]: isThinking=${img.isThinkingImage}, hasSignature=${!!img.thoughtSignature}`);
       });
       
       // 流结束后，一次性发送所有图片
