@@ -45,7 +45,7 @@ export default function Playground() {
   const [temperature, setTemperature] = useState(1);
   const [systemInstruction, setSystemInstruction] = useState('');
   const [includeThoughts, setIncludeThoughts] = useState(true); // 默认启用thinking
-  const [thinkingLevel, setThinkingLevel] = useState('low'); // 默认low级别
+  const [thinkingLevel, setThinkingLevel] = useState('high'); // 默认high级别（深度思考）
   // 图片生成参数
   const [aspectRatio, setAspectRatio] = useState('1:1');
   const [imageSize, setImageSize] = useState('1K');
