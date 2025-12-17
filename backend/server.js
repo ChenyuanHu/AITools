@@ -1030,14 +1030,20 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
                   console.log(`[流式生成][${requestId}] 🔍 part[${i}] thoughtSignature:`, thoughtSignature ? '有' : '无');
                   if (thoughtSignature) {
                     console.log(`[流式生成][${requestId}] ✅ 从完整响应中找到 thought_signature (part ${i})`);
-                    // 更新对应的图片数据（通过数据长度匹配，因为base64数据可能不完全相同）
-                    // 优先更新没有 thoughtSignature 的最终图片
-                    const finalImagesWithoutSignature = collectedImages.filter(img => 
-                      !img.isThinkingImage && !img.thoughtSignature
+                    // 通过图片数据精确匹配（base64数据应该完全一致）
+                    const matchingImage = collectedImages.find(img => 
+                      !img.isThinkingImage && 
+                      img.data === part.inlineData.data
                     );
-                    if (finalImagesWithoutSignature.length > 0) {
-                      finalImagesWithoutSignature[0].thoughtSignature = thoughtSignature;
-                      console.log(`[流式生成][${requestId}] ✅ 已更新图片的 thought_signature`);
+                    if (matchingImage) {
+                      if (!matchingImage.thoughtSignature) {
+                        matchingImage.thoughtSignature = thoughtSignature;
+                        console.log(`[流式生成][${requestId}] ✅ 已更新图片的 thought_signature（通过数据匹配）`);
+                      } else {
+                        console.log(`[流式生成][${requestId}] ⚠️  图片已有 thought_signature，跳过更新`);
+                      }
+                    } else {
+                      console.log(`[流式生成][${requestId}] ⚠️  未找到匹配的图片（数据不匹配），可能已从流式chunk中提取`);
                     }
                   }
                 }
@@ -1090,7 +1096,7 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
                 thoughtSignature: img.thoughtSignature // 传递 thought_signature
               }
             })}\n\n`);
-            console.log(`[流式生成][${requestId}] ✅ 图片[${i+1}]发送成功`);
+            console.log(`[流式生成][${requestId}] ✅ 图片[${i+1}]发送成功, thoughtSignature: ${img.thoughtSignature ? '有' : '无'}`);
           } catch (e) {
             console.error(`[流式生成][${requestId}] ❌ 发送图片[${i+1}]失败:`, e);
             console.error(`[流式生成][${requestId}] ❌ 发送错误详情:`, {

@@ -170,6 +170,7 @@ export default function MainContent({
           console.log('[前端] MainContent 收到图片:', {
             mimeType: image.mimeType,
             dataLength: image.data?.length || 0,
+            hasThoughtSignature: !!image.thoughtSignature,
           });
           if (!image.data || !image.mimeType) {
             console.error('[前端] 图片数据格式不正确:', image);
@@ -470,6 +471,11 @@ export default function MainContent({
                                 }, 0);
                               },
                               (image) => {
+                                console.log('[前端] MainContent 收到图片（编辑模式）:', {
+                                  mimeType: image.mimeType,
+                                  dataLength: image.data?.length || 0,
+                                  hasThoughtSignature: !!image.thoughtSignature,
+                                });
                                 if (!image.data || !image.mimeType) return;
                                 responseImages.push(image);
                                 setCurrentImages([...responseImages]);
