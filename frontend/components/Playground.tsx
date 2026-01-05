@@ -464,7 +464,38 @@ export default function Playground() {
       }
     } catch (error: any) {
       setLoading(false);
-      throw new Error(error.message || '生成失败');
+      
+      // 如果错误已经有详细信息，直接抛出
+      if (error.details) {
+        throw error;
+      }
+      
+      // 处理不同类型的错误
+      let errorMessage = '生成失败';
+      let errorDetails = '';
+      
+      if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      // 网络错误
+      if (error.message === 'Failed to fetch' || error.message?.includes('fetch')) {
+        errorMessage = '网络请求失败';
+        errorDetails = '无法连接到服务器。可能的原因：\n1. 服务器未运行或无法访问\n2. 网络连接问题\n3. 服务器地址配置错误\n4. CORS 跨域问题\n\n请检查网络连接和服务器状态。';
+      }
+      // TypeError（通常是网络相关）
+      else if (error instanceof TypeError) {
+        errorMessage = `网络错误: ${error.message}`;
+        errorDetails = `请求过程中发生网络错误。\n\n错误类型: ${error.name}\n错误信息: ${error.message}\n\n请检查网络连接。`;
+      }
+      // 其他错误
+      else {
+        errorDetails = error.stack || error.toString();
+      }
+      
+      const detailedError = new Error(errorMessage);
+      (detailedError as any).details = errorDetails;
+      throw detailedError;
     }
   };
 

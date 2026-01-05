@@ -1241,12 +1241,44 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
           // 提取详细的错误信息
           let errorMessage = error.message || '生成内容失败';
           let errorType = error.constructor.name || 'Error';
+          let errorDetails = '';
+          
+          // 构建详细的错误信息
+          if (error.stack) {
+            errorDetails = error.stack;
+          }
           
           // 如果是Google API错误，提取详细信息
           if (error.status || error.statusText) {
             errorMessage = `API错误 (${error.status || 'Unknown'}): ${error.message || error.statusText || '未知错误'}`;
             if (error.errorDetails) {
-              errorMessage += `\n详细信息: ${JSON.stringify(error.errorDetails)}`;
+              errorDetails = `API错误详情:\n${JSON.stringify(error.errorDetails, null, 2)}\n\n${errorDetails}`;
+            }
+            if (error.response?.data) {
+              const apiErrorData = typeof error.response.data === 'string' 
+                ? error.response.data 
+                : JSON.stringify(error.response.data, null, 2);
+              errorDetails = `API响应数据:\n${apiErrorData}\n\n${errorDetails}`;
+            }
+          }
+          
+          // 处理网络错误
+          if (error.code) {
+            switch (error.code) {
+              case 'ECONNREFUSED':
+                errorMessage = `连接被拒绝: 无法连接到服务器 (${error.address || 'unknown'}:${error.port || 'unknown'})`;
+                errorDetails = `网络连接错误:\n错误代码: ${error.code}\n地址: ${error.address || 'unknown'}\n端口: ${error.port || 'unknown'}\n系统调用: ${error.syscall || 'unknown'}\n\n${errorDetails}`;
+                break;
+              case 'ETIMEDOUT':
+                errorMessage = `连接超时: 服务器响应时间过长`;
+                errorDetails = `网络超时错误:\n错误代码: ${error.code}\n\n${errorDetails}`;
+                break;
+              case 'ENOTFOUND':
+                errorMessage = `DNS解析失败: 无法解析主机名 (${error.hostname || 'unknown'})`;
+                errorDetails = `DNS错误:\n错误代码: ${error.code}\n主机名: ${error.hostname || 'unknown'}\n\n${errorDetails}`;
+                break;
+              default:
+                errorDetails = `系统错误:\n错误代码: ${error.code}\n错误号: ${error.errno || 'unknown'}\n系统调用: ${error.syscall || 'unknown'}\n\n${errorDetails}`;
             }
           }
           
@@ -1255,10 +1287,18 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
             errorMessage = `文件类型错误: ${error.message}\n请确保上传的文件是图片格式 (jpeg, jpg, png, gif, webp)`;
           }
           
+          // 如果是 Gemini API 错误，提取更多信息
+          if (error.message && (error.message.includes('thought_signature') || error.message.includes('thoughtSignature'))) {
+            errorMessage = `Gemini API 错误: ${error.message}`;
+            if (error.cause) {
+              errorDetails = `API错误原因:\n${JSON.stringify(error.cause, null, 2)}\n\n${errorDetails}`;
+            }
+          }
+          
           res.write(`data: ${JSON.stringify({ 
             error: errorType,
             message: errorMessage,
-            details: error.stack ? error.stack.substring(0, 500) : undefined
+            details: errorDetails || (error.stack ? error.stack.substring(0, 1000) : undefined)
           })}\n\n`);
           res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
           res.end();
@@ -1288,9 +1328,30 @@ app.post('/api/generate/stream', authenticateToken, upload.array('images', 5), a
       if (!res.headersSent) {
         console.log(`[流式生成][${requestId}] 📤 发送JSON格式错误响应...`);
         try {
+          // 提取详细的错误信息（与SSE格式保持一致）
+          let errorMessage = error.message || '生成内容失败';
+          let errorDetails = error.stack || '';
+          
+          // 处理网络错误
+          if (error.code) {
+            switch (error.code) {
+              case 'ECONNREFUSED':
+                errorMessage = `连接被拒绝: 无法连接到服务器 (${error.address || 'unknown'}:${error.port || 'unknown'})`;
+                break;
+              case 'ETIMEDOUT':
+                errorMessage = `连接超时: 服务器响应时间过长`;
+                break;
+              case 'ENOTFOUND':
+                errorMessage = `DNS解析失败: 无法解析主机名 (${error.hostname || 'unknown'})`;
+                break;
+            }
+            errorDetails = `错误代码: ${error.code}\n${errorDetails}`;
+          }
+          
           res.status(500).json({ 
-            error: '生成内容失败',
-            message: error.message 
+            error: error.constructor.name || 'Error',
+            message: errorMessage,
+            details: errorDetails
           });
           console.log(`[流式生成][${requestId}] ✅ JSON错误响应已发送`);
         } catch (jsonError) {

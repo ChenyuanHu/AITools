@@ -150,16 +150,61 @@ export const generateAPI = {
 
     // 使用相对路径或绝对路径
     const streamUrl = API_URL ? `${API_URL}/api/generate/stream` : '/api/generate/stream';
-    const response = await fetch(streamUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-      },
-      body: formData,
-    });
+    
+    let response: Response;
+    try {
+      response = await fetch(streamUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: formData,
+      });
+    } catch (fetchError: any) {
+      // 网络错误（如连接失败、超时等）
+      const errorMessage = fetchError.message || '网络请求失败';
+      const detailedError = new Error(`网络错误: ${errorMessage}`);
+      (detailedError as any).details = `无法连接到服务器。请检查：\n1. 服务器是否正在运行\n2. 网络连接是否正常\n3. 服务器地址是否正确\n\n原始错误: ${fetchError.message || 'Unknown error'}`;
+      throw detailedError;
+    }
 
     if (!response.ok) {
-      throw new Error('生成失败');
+      // 尝试读取响应体中的错误信息
+      let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+      let errorDetails = '';
+      
+      try {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorData.error || errorMessage;
+          errorDetails = errorData.details || errorData.stack || '';
+        } else {
+          const text = await response.text();
+          if (text) {
+            errorDetails = text;
+            // 尝试从文本中提取 JSON 错误信息
+            try {
+              const jsonMatch = text.match(/\{[\s\S]*\}/);
+              if (jsonMatch) {
+                const errorData = JSON.parse(jsonMatch[0]);
+                errorMessage = errorData.message || errorData.error || errorMessage;
+                errorDetails = errorData.details || errorData.stack || errorDetails;
+              }
+            } catch (e) {
+              // 如果解析失败，使用原始文本
+              errorDetails = text;
+            }
+          }
+        }
+      } catch (readError) {
+        // 如果读取响应体失败，使用状态码信息
+        console.error('[API] 读取错误响应失败:', readError);
+      }
+      
+      const error = new Error(errorMessage);
+      (error as any).details = errorDetails || `服务器返回了错误状态码: ${response.status} ${response.statusText}`;
+      throw error;
     }
 
     return response;

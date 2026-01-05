@@ -509,10 +509,19 @@ export default function MainContent({
                             );
                           } catch (error: any) {
                             setIsStreaming(false);
+                            // 显示详细的错误信息
                             const errorMessage = error.message || '生成失败';
+                            console.error('[MainContent] 生成错误（编辑模式）:', error);
+                            
+                            // 构建详细的错误消息
+                            let errorContent = `❌ **错误**: ${errorMessage}`;
+                            if (error.details) {
+                              errorContent += `\n\n\`\`\`\n${error.details}\n\`\`\``;
+                            }
+                            
                             onMessageSent({
                               role: 'assistant',
-                              content: `❌ **错误**: ${errorMessage}`,
+                              content: errorContent,
                             });
                             setCurrentResponse('');
                             setCurrentImages([]);
