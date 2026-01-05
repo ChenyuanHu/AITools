@@ -34,7 +34,7 @@ interface MainContentProps {
     images: File[],
     history: Message[],
     onChunk: (text: string) => void,
-    onImage?: (image: { data: string; mimeType: string }) => void,
+    onImage?: (image: { data: string; mimeType: string; thoughtSignature?: string }) => void,
     onComplete?: () => void,
     onThinking?: (thinking: string) => void // 新增thinking回调
   ) => Promise<void>;
